@@ -3,6 +3,9 @@ FROM debian:latest
 RUN apt-get update && apt-get install -y xvfb ffmpeg
 RUN apt-get update && apt-get install -y openjdk-17-jre git unzip jq curl
 
+# Install Go for compiling webcam_go
+RUN apt-get update && apt-get install -y golang
+
 WORKDIR /root
 RUN git clone https://github.com/alexivkin/minecraft-launcher
 RUN minecraft-launcher/start 1.18.2 docker; exit 0
@@ -16,12 +19,14 @@ RUN minecraft-launcher/start 1.18.2 docker; exit 0
 
 WORKDIR /root
 RUN apt-get install -y wget xdotool
-RUN wget https://github.com/aler9/rtsp-simple-server/releases/download/v0.21.2/rtsp-simple-server_v0.21.2_linux_amd64.tar.gz -O rtsp-simple-server.tar.gz
-
-# Setup the RTSP server
-RUN tar -xzvf rtsp-simple-server.tar.gz
 RUN sed -i '$s/$/ --fullscreen/' minecraft-launcher/start
 
+# Copy and build webcam_go application
+COPY webcam_go /root/webcam_go
+WORKDIR /root/webcam_go
+RUN go build -o /root/termcast
+
+WORKDIR /root
 COPY --chmod=0755 entry-point.sh /root/entry-point.sh
 ENTRYPOINT /root/entry-point.sh
 
