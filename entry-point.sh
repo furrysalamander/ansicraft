@@ -1,17 +1,28 @@
 #!/bin/bash
 
-# Start minecraft in the background using xvfb
+export DISPLAY=:1
+
+# Configure Minecraft options
 echo "rawMouseInput:false" > /root/minecraft-launcher/profiles/docker-base-1.18.2/options.txt
 
-xvfb-run --listen-tcp --server-num 44 --auth-file /tmp/xvfb.auth -s "-ac -screen 0 1280x720x24 +extension XTEST" minecraft-launcher/start 1.18.2 docker >/dev/null 2>&1 &
-# Wait for minecraft to start up
-sleep 30 # If your computer loads the world slower or faster, this can be adjusted.
-DISPLAY=:44 xdotool click 1
-sleep 1
-DISPLAY=:44 xdotool key Return
+# Start Xorg with dummy driver
+echo "Starting Xorg with dummy video driver..."
+Xorg "$DISPLAY" -noreset -logfile /tmp/xorg.log -config /etc/X11/xorg.conf.dummy &
+sleep 2
 
-# Start our terminal-based Minecraft viewer with direct X11 capture
+# Start Minecraft
+echo "Starting Minecraft..."
+/root/minecraft-launcher/start 1.18.2 docker >/dev/null 2>&1 &
+sleep 15
+
+# Interact with Minecraft
+echo "Sending input..."
+xdotool mousemove 640 360 click 1
+sleep 1
+xdotool key Return
+xdotool key F11
+
+# Start terminal viewer
 echo "Starting terminal-based Minecraft viewer..."
-cd /root
-./termcast
+/root/termcast
 clear
