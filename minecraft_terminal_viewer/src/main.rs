@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
 use std::process::{Command, Stdio};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::panic;
@@ -11,12 +11,8 @@ use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, MouseButton},
     execute,
-    terminal::{self, Clear, ClearType},
+    terminal::{self, Clear, ClearType, size},
 };
-
-const TARGET_WIDTH: usize = 80;
-// The height must be a multiple of two
-const TARGET_HEIGHT: usize = ((TARGET_WIDTH * 9 / 16) / 2) * 2;
 
 // Game's native resolution
 const GAME_WIDTH: u16 = 1280;
@@ -27,6 +23,15 @@ const GAME_HEIGHT: u16 = 720;
 const FFMPEG_BINARY: &str = "ffmpeg.exe";
 #[cfg(not(target_os = "windows"))]
 const FFMPEG_BINARY: &str = "ffmpeg";
+
+// Terminal size information
+#[derive(Clone)]
+struct TerminalSize {
+    width: u16,
+    height: u16,
+    target_width: usize,
+    target_height: usize,
+}
 
 // Main function with error handling
 fn main() -> io::Result<()> {
@@ -56,41 +61,62 @@ fn main() -> io::Result<()> {
     println!("Terminal Minecraft Viewer");
     println!("Loading Minecraft stream...");
     
+    // Get initial terminal size
+    let (term_width, term_height) = size()?;
+    
+    // Calculate target dimensions (must be even height for the block character approach)
+    let target_width = term_width as usize;
+    // For proper aspect ratio and block character rendering
+    let target_height = ((target_width * 9 / 16 + 1) / 2) * 2;
+    
+    // Create a shared terminal size that can be updated on resize
+    let term_size = Arc::new(Mutex::new(TerminalSize {
+        width: term_width,
+        height: term_height,
+        target_width,
+        target_height,
+    }));
+    
     // Shared running flag to signal threads to stop
     let running = Arc::new(AtomicBool::new(true));
     
     // Channels for communication between threads
     let (render_tx, render_rx) = mpsc::channel();
     let (input_tx, input_rx) = mpsc::channel();
+    let (resize_tx, resize_rx) = mpsc::channel();
     
     // Clone Arc for each thread
     let running_input = Arc::clone(&running);
     let running_render = Arc::clone(&running);
     let running_display = Arc::clone(&running);
     let running_forward = Arc::clone(&running);
+    let term_size_render = Arc::clone(&term_size);
+    let term_size_input = Arc::clone(&term_size);
+    let term_size_display = Arc::clone(&term_size);
+    let term_size_forward = Arc::clone(&term_size);
     
-    // Start the input capture thread
+    // Start the input capture thread (now also handles resize events)
     let input_handle = thread::spawn(move || {
-        if let Err(e) = capture_input(input_tx, running_input) {
+        if let Err(e) = capture_input(input_tx, resize_tx, term_size_input, running_input) {
             eprintln!("Input capture error: {}", e);
         }
     });
     
     // Start the input forwarding thread
     let input_rx_handle = thread::spawn(move || {
-        forward_input_to_minecraft(input_rx, running_forward);
+        forward_input_to_minecraft(input_rx, term_size_forward, running_forward);
     });
     
     // Start the rendering thread
     let render_rx_handle = thread::spawn(move || {
-        if let Err(e) = display_render_thread(render_rx, running_display) {
+        if let Err(e) = display_render_thread(render_rx, term_size_display, running_display) {
             eprintln!("Render display error: {}", e);
         }
     });
     
     // Start the Minecraft rendering thread
     let render_handle = thread::spawn(move || {
-        if let Err(e) = render_minecraft_directly(render_tx, running_render) {
+        if let Err(e) = render_minecraft_directly(render_tx, resize_rx, term_size_render, running_render) {
             eprintln!("Render error: {}", e);
         }
     });
@@ -128,32 +154,86 @@ fn cleanup_terminal() -> io::Result<()> {
     Ok(())
 }
 
-// Renders the Minecraft X11 screen directly to the terminal
-fn render_minecraft_directly(render_tx: mpsc::Sender<String>, running: Arc<AtomicBool>) -> io::Result<()> {
-    let x11_grab_args = [
-        "-f", "x11grab",
-        "-video_size", "1280x720",
-        "-i", ":1",
-        "-f", "rawvideo",
-        "-vf", &format!("scale={}x{},setsar=1:1", TARGET_WIDTH, TARGET_HEIGHT),
-        "-pix_fmt", "rgb24",
-        "pipe:",
-    ];
+// Renders the Minecraft X11 screen directly to the terminal with resize support
+fn render_minecraft_directly(
+    render_tx: mpsc::Sender<String>, 
+    resize_rx: mpsc::Receiver<()>,
+    term_size: Arc<Mutex<TerminalSize>>,
+    running: Arc<AtomicBool>
+) -> io::Result<()> {
+    let mut current_process: Option<std::process::Child> = None;
+    let mut last_width = 0;
+    let mut last_height = 0;
     
-    let mut ffmpeg_process = Command::new(FFMPEG_BINARY)
-        .args(&x11_grab_args)
-        .stdout(Stdio::piped())
-        .spawn()?;
+    while running.load(Ordering::SeqCst) {
+        // Get current terminal dimensions
+        let (target_width, target_height) = {
+            let size = term_size.lock().unwrap();
+            (size.target_width, size.target_height)
+        };
+        
+        // Only restart ffmpeg if the dimensions actually changed
+        if target_width != last_width || target_height != last_height {
+            // Kill previous ffmpeg process if it exists
+            if let Some(mut process) = current_process.take() {
+                let _ = process.kill();
+                let _ = process.wait();
+            }
+            
+            // Start a new ffmpeg process with updated dimensions
+            let x11_grab_args = [
+                "-f", "x11grab",
+                "-video_size", "1280x720",
+                "-i", ":1",
+                "-f", "rawvideo",
+                "-vf", &format!("scale={}x{},setsar=1:1", target_width, target_height),
+                "-pix_fmt", "rgb24",
+                "pipe:",
+            ];
+            
+            let mut ffmpeg_process = Command::new(FFMPEG_BINARY)
+                .args(&x11_grab_args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null()) // Redirect stderr to /dev/null
+                .spawn()?;
+            
+            let stdout = ffmpeg_process.stdout.take().unwrap();
+            current_process = Some(ffmpeg_process);
+            
+            // Clone necessary channels and values for the render thread
+            let render_tx_clone = render_tx.clone();
+            let running_clone = Arc::clone(&running);
+            
+            // Spawn a thread to handle the rendering for this process
+            let _render_thread = thread::spawn(move || {
+                if let Err(e) = render_byte_stream(stdout, target_height, target_width, 0, 0, render_tx_clone, running_clone) {
+                    eprintln!("Render error: {}", e);
+                }
+            });
+            
+            // Update last dimensions
+            last_width = target_width;
+            last_height = target_height;
+        }
+        
+        // Wait for a resize event or exit
+        match resize_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(_) => continue, // Resize event received, restart ffmpeg on next loop
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                running.store(false, Ordering::SeqCst);
+                break;
+            }
+        }
+    }
     
-    let stdout = ffmpeg_process.stdout.take().unwrap();
+    // Ensure the current process is killed
+    if let Some(mut process) = current_process {
+        let _ = process.kill();
+        let _ = process.wait();
+    }
     
-    let result = render_byte_stream(stdout, TARGET_HEIGHT, TARGET_WIDTH, 0, 0, render_tx, running);
-    
-    // Kill ffmpeg process on exit
-    let _ = ffmpeg_process.kill();
-    let _ = ffmpeg_process.wait();
-    
-    result
+    Ok(())
 }
 
 // Renders an arbitrary bytes buffer to the terminal
@@ -225,7 +305,11 @@ fn render_byte_stream<R: Read>(
 }
 
 // Display the rendered frames
-fn display_render_thread(render_rx: mpsc::Receiver<String>, running: Arc<AtomicBool>) -> io::Result<()> {
+fn display_render_thread(
+    render_rx: mpsc::Receiver<String>, 
+    _term_size: Arc<Mutex<TerminalSize>>,
+    running: Arc<AtomicBool>
+) -> io::Result<()> {
     let mut stdout = io::stdout();
     
     while running.load(Ordering::SeqCst) {
@@ -255,7 +339,12 @@ enum InputEvent {
 }
 
 // Captures keyboard and mouse input using crossterm
-fn capture_input(input_tx: mpsc::Sender<InputEvent>, running: Arc<AtomicBool>) -> io::Result<()> {
+fn capture_input(
+    input_tx: mpsc::Sender<InputEvent>, 
+    resize_tx: mpsc::Sender<()>,
+    term_size: Arc<Mutex<TerminalSize>>,
+    running: Arc<AtomicBool>
+) -> io::Result<()> {
     while running.load(Ordering::SeqCst) {
         if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
@@ -268,6 +357,9 @@ fn capture_input(input_tx: mpsc::Sender<InputEvent>, running: Arc<AtomicBool>) -
                         }
                         KeyCode::Char(c) => {
                             let _ = input_tx.send(InputEvent::Key(c.to_string()));
+                        }
+                        KeyCode::Backspace => {
+                            let _ = input_tx.send(InputEvent::Key("BACKSPACE".to_string()));
                         }
                         KeyCode::Esc => {
                             let _ = input_tx.send(InputEvent::Key("ESC".to_string()));
@@ -294,6 +386,24 @@ fn capture_input(input_tx: mpsc::Sender<InputEvent>, running: Arc<AtomicBool>) -
                     // Send the mouse event
                     let _ = input_tx.send(InputEvent::Mouse(column, row, kind));
                 }
+                Event::Resize(width, height) => {
+                    // Update terminal size structure when resize occurs
+                    let target_width = width as usize;
+                    // Ensure height is a multiple of 2 for the block character rendering
+                    let target_height = ((target_width * 9 / 16 + 1) / 2) * 2;
+                    
+                    // Update shared terminal size
+                    {
+                        let mut size = term_size.lock().unwrap();
+                        size.width = width;
+                        size.height = height;
+                        size.target_width = target_width;
+                        size.target_height = target_height;
+                    }
+                    
+                    // Send resize event to trigger ffmpeg restart
+                    let _ = resize_tx.send(());
+                }
                 _ => {}
             }
         }
@@ -303,7 +413,11 @@ fn capture_input(input_tx: mpsc::Sender<InputEvent>, running: Arc<AtomicBool>) -
 }
 
 // Forwards captured input to the Minecraft instance
-fn forward_input_to_minecraft(input_rx: mpsc::Receiver<InputEvent>, running: Arc<AtomicBool>) {
+fn forward_input_to_minecraft(
+    input_rx: mpsc::Receiver<InputEvent>, 
+    term_size: Arc<Mutex<TerminalSize>>,
+    running: Arc<AtomicBool>
+) {
     // Helper function to run xdotool commands
     fn run_xdotool(args: &[&str]) {
         Command::new("xdotool")
@@ -317,10 +431,16 @@ fn forward_input_to_minecraft(input_rx: mpsc::Receiver<InputEvent>, running: Arc
     }
     
     // Helper function to scale mouse coordinates from terminal to game resolution
-    fn scale_mouse_coords(column: u16, row: u16) -> (u16, u16) {
+    fn scale_mouse_coords(column: u16, row: u16, term_size: &TerminalSize) -> (u16, u16) {
         // Scale the coordinates from terminal size to game resolution
-        let scaled_x = (column as f32 / TARGET_WIDTH as f32 * GAME_WIDTH as f32) as u16;
-        let scaled_y = (row as f32 / (TARGET_HEIGHT/2) as f32 * GAME_HEIGHT as f32) as u16;
+        // For width, use target_width since that's the actual number of characters
+        let scaled_x = (column as f32 / term_size.target_width as f32 * GAME_WIDTH as f32) as u16;
+        
+        // For height, account for the fact that each character is 2 pixels tall
+        // Each row in the terminal represents 2 pixels in height
+        let actual_height_in_pixels = term_size.target_height / 2; // Since each character is 2 pixels tall
+        let scaled_y = (row as f32 / actual_height_in_pixels as f32 * GAME_HEIGHT as f32) as u16;
+        
         (scaled_x, scaled_y)
     }
     
@@ -330,10 +450,6 @@ fn forward_input_to_minecraft(input_rx: mpsc::Receiver<InputEvent>, running: Arc
                 match event {
                     InputEvent::Key(key) => {
                         match key.as_str() {
-                            "w" => run_xdotool(&["key", "w"]),
-                            "a" => run_xdotool(&["key", "a"]),
-                            "s" => run_xdotool(&["key", "s"]),
-                            "d" => run_xdotool(&["key", "d"]),
                             " " => run_xdotool(&["key", "space"]),
                             "SPECIAL_A" => run_xdotool(&["key", "Up"]),
                             "SPECIAL_B" => run_xdotool(&["key", "Down"]),
@@ -341,18 +457,16 @@ fn forward_input_to_minecraft(input_rx: mpsc::Receiver<InputEvent>, running: Arc
                             "SPECIAL_D" => run_xdotool(&["key", "Left"]),
                             "ESC" => run_xdotool(&["key", "Escape"]),
                             "\r" => run_xdotool(&["key", "Return"]),
-                            "e" => run_xdotool(&["mousemove_relative", "200", "0"]),
-                            "r" => run_xdotool(&["key", "e"]),
-                            "q" => run_xdotool(&["mousemove_relative", "--", "-200", "0"]),
-                            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => run_xdotool(&["key", &key]),
-                            "b" => run_xdotool(&["key", "b"]), // Changed from exit to normal key
-                            "t" => run_xdotool(&["mouseup", "1"]),
-                            "g" => run_xdotool(&["mousedown", "1"]),
-                            _ => {}
+                            // "t" => run_xdotool(&["mouseup", "1"]),
+                            // "g" => run_xdotool(&["mousedown", "1"]),
+                            _ => run_xdotool(&["key", key.as_str()]),
                         }
                     }
                     InputEvent::Mouse(column, row, kind) => {
-                        let (game_x, game_y) = scale_mouse_coords(column, row);
+                        // Get current terminal size from the shared state
+                        let term_size_value = term_size.lock().unwrap().clone();
+                        
+                        let (game_x, game_y) = scale_mouse_coords(column, row, &term_size_value);
                         
                         // Move the mouse to the scaled coordinates
                         run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
