@@ -33,6 +33,12 @@ struct TerminalSize {
     target_height: usize,
 }
 
+// Input events enum to handle both keyboard and mouse
+enum InputEvent {
+    Key(KeyEvent),
+    Mouse(MouseEvent),
+}
+
 // Main function with error handling
 fn main() -> io::Result<()> {
     // Clear the terminal
@@ -332,12 +338,6 @@ fn display_render_thread(
     Ok(())
 }
 
-// Input events enum to handle both keyboard and mouse
-enum InputEvent {
-    Key(String),
-    Mouse(u16, u16, MouseEventKind),
-}
-
 // Captures keyboard and mouse input using crossterm
 fn capture_input(
     input_tx: mpsc::Sender<InputEvent>, 
@@ -348,43 +348,19 @@ fn capture_input(
     while running.load(Ordering::SeqCst) {
         if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
-                Event::Key(KeyEvent { code, modifiers, .. }) => {
-                    match code {
-                        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            // Ctrl+C to exit
-                            running.store(false, Ordering::SeqCst);
-                            break;
-                        }
-                        KeyCode::Char(c) => {
-                            let _ = input_tx.send(InputEvent::Key(c.to_string()));
-                        }
-                        KeyCode::Backspace => {
-                            let _ = input_tx.send(InputEvent::Key("BACKSPACE".to_string()));
-                        }
-                        KeyCode::Esc => {
-                            let _ = input_tx.send(InputEvent::Key("ESC".to_string()));
-                        }
-                        KeyCode::Up => {
-                            let _ = input_tx.send(InputEvent::Key("SPECIAL_A".to_string()));
-                        }
-                        KeyCode::Down => {
-                            let _ = input_tx.send(InputEvent::Key("SPECIAL_B".to_string()));
-                        }
-                        KeyCode::Right => {
-                            let _ = input_tx.send(InputEvent::Key("SPECIAL_C".to_string()));
-                        }
-                        KeyCode::Left => {
-                            let _ = input_tx.send(InputEvent::Key("SPECIAL_D".to_string()));
-                        }
-                        KeyCode::Enter => {
-                            let _ = input_tx.send(InputEvent::Key("\r".to_string()));
-                        }
-                        _ => {}
+                Event::Key(key_event) => {
+                    // Check for exit command (Ctrl+C)
+                    if key_event.code == KeyCode::Char('c') && key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                        running.store(false, Ordering::SeqCst);
+                        break;
                     }
+                    
+                    // Forward all other key events directly
+                    let _ = input_tx.send(InputEvent::Key(key_event));
                 }
-                Event::Mouse(MouseEvent { kind, column, row, .. }) => {
-                    // Send the mouse event
-                    let _ = input_tx.send(InputEvent::Mouse(column, row, kind));
+                Event::Mouse(mouse_event) => {
+                    // Forward all mouse events directly
+                    let _ = input_tx.send(InputEvent::Mouse(mouse_event));
                 }
                 Event::Resize(width, height) => {
                     // Update terminal size structure when resize occurs
@@ -448,31 +424,101 @@ fn forward_input_to_minecraft(
         match input_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(event) => {
                 match event {
-                    InputEvent::Key(key) => {
-                        match key.as_str() {
-                            " " => run_xdotool(&["key", "space"]),
-                            "SPECIAL_A" => run_xdotool(&["key", "Up"]),
-                            "SPECIAL_B" => run_xdotool(&["key", "Down"]),
-                            "SPECIAL_C" => run_xdotool(&["key", "Right"]),
-                            "SPECIAL_D" => run_xdotool(&["key", "Left"]),
-                            "ESC" => run_xdotool(&["key", "Escape"]),
-                            "\r" => run_xdotool(&["key", "Return"]),
-                            // "t" => run_xdotool(&["mouseup", "1"]),
-                            // "g" => run_xdotool(&["mousedown", "1"]),
-                            _ => run_xdotool(&["key", key.as_str()]),
+                    InputEvent::Key(key_event) => {
+                        match key_event.code {
+                            KeyCode::Char(c) => {
+                                // Special handling for space and semicolon
+                                match c {
+                                    ' ' => run_xdotool(&["key", "space"]),
+                                    ';' => run_xdotool(&["key", "semicolon"]),
+                                    '?' => run_xdotool(&["key", "question"]),
+                                    '!' => run_xdotool(&["key", "exclam"]),
+                                    ':' => run_xdotool(&["key", "colon"]),
+                                    '"' => run_xdotool(&["key", "quotedbl"]),
+                                    '\'' => run_xdotool(&["key", "apostrophe"]),
+                                    '>' => run_xdotool(&["key", "greater"]),
+                                    '<' => run_xdotool(&["key", "less"]),
+                                    '|' => run_xdotool(&["key", "bar"]),
+                                    '\\' => run_xdotool(&["key", "backslash"]),
+                                    '/' => run_xdotool(&["key", "slash"]),
+                                    '[' => run_xdotool(&["key", "bracketleft"]),
+                                    ']' => run_xdotool(&["key", "bracketright"]),
+                                    '{' => run_xdotool(&["key", "braceleft"]),
+                                    '}' => run_xdotool(&["key", "braceright"]),
+                                    '(' => run_xdotool(&["key", "parenleft"]),
+                                    ')' => run_xdotool(&["key", "parenright"]),
+                                    '+' => run_xdotool(&["key", "plus"]),
+                                    '-' => run_xdotool(&["key", "minus"]),
+                                    '=' => run_xdotool(&["key", "equal"]),
+                                    '_' => run_xdotool(&["key", "underscore"]),
+                                    ',' => run_xdotool(&["key", "comma"]),
+                                    '.' => run_xdotool(&["key", "period"]),
+                                    '^' => run_xdotool(&["key", "asciicircum"]),
+                                    '~' => run_xdotool(&["key", "asciitilde"]),
+                                    '`' => run_xdotool(&["key", "grave"]),
+                                    '@' => run_xdotool(&["key", "at"]),
+                                    '#' => run_xdotool(&["key", "numbersign"]),
+                                    '$' => run_xdotool(&["key", "dollar"]),
+                                    '%' => run_xdotool(&["key", "percent"]),
+                                    '&' => run_xdotool(&["key", "ampersand"]),
+                                    '*' => run_xdotool(&["key", "asterisk"]),
+                                    _ => run_xdotool(&["key", &c.to_string()]),
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                run_xdotool(&["key", "BackSpace"]);
+                            }
+                            KeyCode::Esc => {
+                                run_xdotool(&["key", "Escape"]);
+                            }
+                            KeyCode::Up => {
+                                run_xdotool(&["key", "Up"]);
+                            }
+                            KeyCode::Down => {
+                                run_xdotool(&["key", "Down"]);
+                            }
+                            KeyCode::Right => {
+                                run_xdotool(&["key", "Right"]);
+                            }
+                            KeyCode::Left => {
+                                run_xdotool(&["key", "Left"]);
+                            }
+                            KeyCode::Enter => {
+                                run_xdotool(&["key", "Return"]);
+                            }
+                            KeyCode::Tab => {
+                                run_xdotool(&["key", "Tab"]);
+                            }
+                            KeyCode::Delete => {
+                                run_xdotool(&["key", "Delete"]);
+                            }
+                            KeyCode::Home => {
+                                run_xdotool(&["key", "Home"]);
+                            }
+                            KeyCode::End => {
+                                run_xdotool(&["key", "End"]);
+                            }
+                            KeyCode::PageUp => {
+                                run_xdotool(&["key", "Page_Up"]);
+                            }
+                            KeyCode::PageDown => {
+                                run_xdotool(&["key", "Page_Down"]);
+                            }
+                            // Handle other keys if needed
+                            _ => {}
                         }
                     }
-                    InputEvent::Mouse(column, row, kind) => {
+                    InputEvent::Mouse(mouse_event) => {
                         // Get current terminal size from the shared state
                         let term_size_value = term_size.lock().unwrap().clone();
                         
-                        let (game_x, game_y) = scale_mouse_coords(column, row, &term_size_value);
+                        let (game_x, game_y) = scale_mouse_coords(mouse_event.column, mouse_event.row, &term_size_value);
                         
                         // Move the mouse to the scaled coordinates
                         run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
                         
                         // Handle different mouse event types
-                        match kind {
+                        match mouse_event.kind {
                             MouseEventKind::Down(MouseButton::Left) => {
                                 run_xdotool(&["mousedown", "1"]);
                             }
