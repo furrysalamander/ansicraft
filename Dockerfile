@@ -16,10 +16,17 @@ RUN minecraft-launcher/start 1.18.2 docker || true
 # Add dummy xorg.conf
 COPY xorg.conf /etc/X11/xorg.conf.dummy
 
-# Add and build Go webcam viewer
-COPY webcam_go /root/webcam_go
-WORKDIR /root/webcam_go
-RUN go build -o /root/termcast
+# Install Rust and build Rust webcam viewer
+RUN apt-get update && apt-get install -y \
+    build-essential pkg-config libssl-dev
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Copy and build Rust webcam viewer
+COPY minecraft_terminal_viewer /root/minecraft_terminal_viewer
+WORKDIR /root/minecraft_terminal_viewer
+RUN cargo build --release
+RUN cp /root/minecraft_terminal_viewer/target/release/minecraft_terminal_viewer /root/termcast
 
 # Add entrypoint
 WORKDIR /root

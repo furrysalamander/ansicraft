@@ -1,0 +1,40 @@
+# Rust build artifacts
+/minecraft_terminal_viewer/target/
+/minecraft_terminal_viewer/Cargo.lock
+/minecraft_terminal_viewer/debug/
+/minecraft_terminal_viewer/release/
+**/*.rs.bk
+
+# Go build artifacts
+/webcam_go/
+/webcam_go/webcam_go
+/webcam_go/bin/
+/webcam_go/pkg/
+
+# Editor and OS specific files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Docker related
+.docker/
+docker-compose.override.yml
+
+# Environment variables
+.env
+.env.*
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Logs
+*.log
+logs/
