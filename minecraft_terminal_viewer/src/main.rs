@@ -5,7 +5,7 @@ use std::thread;
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind, MouseButton},
     execute,
     terminal::{self, Clear, ClearType},
 };
@@ -13,6 +13,10 @@ use crossterm::{
 const TARGET_WIDTH: usize = 80;
 // The height must be a multiple of two
 const TARGET_HEIGHT: usize = ((TARGET_WIDTH * 9 / 16) / 2) * 2;
+
+// Game's native resolution
+const GAME_WIDTH: u16 = 1280;
+const GAME_HEIGHT: u16 = 720;
 
 // Platform-specific ffmpeg binary
 #[cfg(target_os = "windows")]
@@ -33,21 +37,24 @@ fn main() -> io::Result<()> {
     
     terminal::enable_raw_mode()?;
     
+    // Enable mouse capture
+    execute!(stdout, event::EnableMouseCapture)?;
+    
     println!("Terminal Minecraft Viewer");
     println!("Loading Minecraft stream...");
     
     // Channels for communication between threads
     let (render_tx, render_rx) = mpsc::channel();
-    let (keyboard_tx, keyboard_rx) = mpsc::channel();
+    let (input_tx, input_rx) = mpsc::channel();
     
-    // Start the keyboard input capture thread
-    let keyboard_handle = thread::spawn(move || {
-        capture_keyboard_input(keyboard_tx).unwrap();
+    // Start the input capture thread
+    let input_handle = thread::spawn(move || {
+        capture_input(input_tx).unwrap();
     });
     
-    // Start the keyboard forwarding thread
-    let keyboard_rx_handle = thread::spawn(move || {
-        send_input_to_minecraft(keyboard_rx);
+    // Start the input forwarding thread
+    let input_rx_handle = thread::spawn(move || {
+        forward_input_to_minecraft(input_rx);
     });
     
     // Start the rendering thread
@@ -61,14 +68,15 @@ fn main() -> io::Result<()> {
     });
     
     // Wait for threads to finish
-    keyboard_handle.join().unwrap();
-    keyboard_rx_handle.join().unwrap();
+    input_handle.join().unwrap();
+    input_rx_handle.join().unwrap();
     render_rx_handle.join().unwrap();
     render_handle.join().unwrap();
     
-    // Restore terminal
+    // Disable mouse capture and restore terminal
     execute!(
         stdout,
+        event::DisableMouseCapture,
         terminal::LeaveAlternateScreen,
         cursor::Show
     )?;
@@ -175,40 +183,52 @@ fn display_render_thread(render_rx: mpsc::Receiver<String>) -> io::Result<()> {
     Ok(())
 }
 
-// Captures keyboard input using crossterm
-fn capture_keyboard_input(keyboard_tx: mpsc::Sender<String>) -> io::Result<()> {
+// Input events enum to handle both keyboard and mouse
+enum InputEvent {
+    Key(String),
+    Mouse(u16, u16, MouseEventKind),
+}
+
+// Captures keyboard and mouse input using crossterm
+fn capture_input(input_tx: mpsc::Sender<InputEvent>) -> io::Result<()> {
     loop {
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(KeyEvent { code, modifiers, .. }) = event::read()? {
-                match code {
-                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        // Ctrl+C to exit
-                        break;
+            match event::read()? {
+                Event::Key(KeyEvent { code, modifiers, .. }) => {
+                    match code {
+                        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                            // Ctrl+C to exit
+                            break;
+                        }
+                        KeyCode::Char(c) => {
+                            input_tx.send(InputEvent::Key(c.to_string())).unwrap();
+                        }
+                        KeyCode::Esc => {
+                            input_tx.send(InputEvent::Key("ESC".to_string())).unwrap();
+                        }
+                        KeyCode::Up => {
+                            input_tx.send(InputEvent::Key("SPECIAL_A".to_string())).unwrap();
+                        }
+                        KeyCode::Down => {
+                            input_tx.send(InputEvent::Key("SPECIAL_B".to_string())).unwrap();
+                        }
+                        KeyCode::Right => {
+                            input_tx.send(InputEvent::Key("SPECIAL_C".to_string())).unwrap();
+                        }
+                        KeyCode::Left => {
+                            input_tx.send(InputEvent::Key("SPECIAL_D".to_string())).unwrap();
+                        }
+                        KeyCode::Enter => {
+                            input_tx.send(InputEvent::Key("\r".to_string())).unwrap();
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char(c) => {
-                        keyboard_tx.send(c.to_string()).unwrap();
-                    }
-                    KeyCode::Esc => {
-                        keyboard_tx.send("ESC".to_string()).unwrap();
-                    }
-                    KeyCode::Up => {
-                        keyboard_tx.send("SPECIAL_A".to_string()).unwrap();
-                    }
-                    KeyCode::Down => {
-                        keyboard_tx.send("SPECIAL_B".to_string()).unwrap();
-                    }
-                    KeyCode::Right => {
-                        keyboard_tx.send("SPECIAL_C".to_string()).unwrap();
-                    }
-                    KeyCode::Left => {
-                        keyboard_tx.send("SPECIAL_D".to_string()).unwrap();
-                    }
-                    KeyCode::Enter => {
-                        keyboard_tx.send("\r".to_string()).unwrap();
-                    }
-                    // Fixed: Replace KeyCode::Space with KeyCode::Char(' ')
-                    _ => {}
                 }
+                Event::Mouse(MouseEvent { kind, column, row, .. }) => {
+                    // Send the mouse event
+                    input_tx.send(InputEvent::Mouse(column, row, kind)).unwrap();
+                }
+                _ => {}
             }
         }
     }
@@ -216,38 +236,87 @@ fn capture_keyboard_input(keyboard_tx: mpsc::Sender<String>) -> io::Result<()> {
     Ok(())
 }
 
-// Forwards captured keyboard input to the Minecraft instance
-fn send_input_to_minecraft(keyboard_rx: mpsc::Receiver<String>) {
-    while let Ok(key) = keyboard_rx.recv() {
-        // Helper function to run xdotool commands
-        fn run_xdotool(args: &[&str]) {
-            Command::new("xdotool")
-                .args(args)
-                .env("DISPLAY", ":1")
-                .status()
-                .unwrap();
-        }
-        
-        match key.as_str() {
-            "w" => run_xdotool(&["key", "w"]),
-            "a" => run_xdotool(&["key", "a"]),
-            "s" => run_xdotool(&["key", "s"]),
-            "d" => run_xdotool(&["key", "d"]),
-            " " => run_xdotool(&["key", "space"]),
-            "SPECIAL_A" => run_xdotool(&["key", "Up"]),
-            "SPECIAL_B" => run_xdotool(&["key", "Down"]),
-            "SPECIAL_C" => run_xdotool(&["key", "Right"]),
-            "SPECIAL_D" => run_xdotool(&["key", "Left"]),
-            "ESC" => run_xdotool(&["key", "Escape"]),
-            "\r" => run_xdotool(&["key", "Return"]),
-            "e" => run_xdotool(&["mousemove_relative", "200", "0"]),
-            "r" => run_xdotool(&["key", "e"]),
-            "q" => run_xdotool(&["mousemove_relative", "--", "-200", "0"]),
-            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => run_xdotool(&["key", &key]),
-            "b" => std::process::exit(0),
-            "t" => run_xdotool(&["mouseup", "1"]),
-            "g" => run_xdotool(&["mousedown", "1"]),
-            _ => run_xdotool(&["click", "1"]), // Default action is to click
+// Forwards captured input to the Minecraft instance
+fn forward_input_to_minecraft(input_rx: mpsc::Receiver<InputEvent>) {
+    // Helper function to run xdotool commands
+    fn run_xdotool(args: &[&str]) {
+        Command::new("xdotool")
+            .args(args)
+            .env("DISPLAY", ":1")
+            .status()
+            .unwrap();
+    }
+    
+    // Helper function to scale mouse coordinates from terminal to game resolution
+    fn scale_mouse_coords(column: u16, row: u16) -> (u16, u16) {
+        // Scale the coordinates from terminal size to game resolution
+        let scaled_x = (column as f32 / TARGET_WIDTH as f32 * GAME_WIDTH as f32) as u16;
+        let scaled_y = (row as f32 / (TARGET_HEIGHT/2) as f32 * GAME_HEIGHT as f32) as u16;
+        (scaled_x, scaled_y)
+    }
+    
+    while let Ok(event) = input_rx.recv() {
+        match event {
+            InputEvent::Key(key) => {
+                match key.as_str() {
+                    "w" => run_xdotool(&["key", "w"]),
+                    "a" => run_xdotool(&["key", "a"]),
+                    "s" => run_xdotool(&["key", "s"]),
+                    "d" => run_xdotool(&["key", "d"]),
+                    " " => run_xdotool(&["key", "space"]),
+                    "SPECIAL_A" => run_xdotool(&["key", "Up"]),
+                    "SPECIAL_B" => run_xdotool(&["key", "Down"]),
+                    "SPECIAL_C" => run_xdotool(&["key", "Right"]),
+                    "SPECIAL_D" => run_xdotool(&["key", "Left"]),
+                    "ESC" => run_xdotool(&["key", "Escape"]),
+                    "\r" => run_xdotool(&["key", "Return"]),
+                    "e" => run_xdotool(&["mousemove_relative", "200", "0"]),
+                    "r" => run_xdotool(&["key", "e"]),
+                    "q" => run_xdotool(&["mousemove_relative", "--", "-200", "0"]),
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => run_xdotool(&["key", &key]),
+                    "b" => std::process::exit(0),
+                    "t" => run_xdotool(&["mouseup", "1"]),
+                    "g" => run_xdotool(&["mousedown", "1"]),
+                    _ => {}
+                }
+            }
+            InputEvent::Mouse(column, row, kind) => {
+                let (game_x, game_y) = scale_mouse_coords(column, row);
+                
+                // Move the mouse to the scaled coordinates
+                run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                
+                // Handle different mouse event types
+                match kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        run_xdotool(&["mousedown", "1"]);
+                    }
+                    MouseEventKind::Up(MouseButton::Left) => {
+                        run_xdotool(&["mouseup", "1"]);
+                    }
+                    MouseEventKind::Down(MouseButton::Right) => {
+                        run_xdotool(&["mousedown", "3"]);
+                    }
+                    MouseEventKind::Up(MouseButton::Right) => {
+                        run_xdotool(&["mouseup", "3"]);
+                    }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        // For drag, we've already moved the mouse with the mousemove command
+                        // No need to send additional clicks
+                    }
+                    MouseEventKind::Drag(MouseButton::Right) => {
+                        // For drag, we've already moved the mouse with the mousemove command
+                        // No need to send additional clicks
+                    }
+                    MouseEventKind::ScrollDown => {
+                        run_xdotool(&["click", "5"]);
+                    }
+                    MouseEventKind::ScrollUp => {
+                        run_xdotool(&["click", "4"]);
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 }
