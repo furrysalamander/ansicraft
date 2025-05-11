@@ -171,6 +171,10 @@ fn render_minecraft_directly(
     let mut last_width = 0;
     let mut last_height = 0;
     
+    // Clear the terminal on startup
+    let mut stdout = io::stdout();
+    execute!(stdout, Clear(ClearType::All))?;
+    
     while running.load(Ordering::SeqCst) {
         // Get current terminal dimensions
         let (target_width, target_height) = {
@@ -185,6 +189,10 @@ fn render_minecraft_directly(
                 let _ = process.kill();
                 let _ = process.wait();
             }
+            
+            // Clear the terminal when dimensions change
+            let mut stdout = io::stdout();
+            execute!(stdout, Clear(ClearType::All))?;
             
             // Start a new ffmpeg process with updated dimensions
             let x11_grab_args = [
