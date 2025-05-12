@@ -64,8 +64,8 @@ fn main() -> io::Result<()> {
         original_hook(panic_info);
     }));
     
-    println!("Terminal Minecraft Viewer");
-    println!("Loading Minecraft stream...");
+    // println!("Terminal Minecraft Viewer");
+    // println!("Loading Minecraft stream...");
     
     // Get initial terminal size
     let (term_width, term_height) = size()?;
@@ -428,8 +428,25 @@ fn forward_input_to_minecraft(
         (scaled_x, scaled_y)
     }
     
+    // A struct to hold the state of the wasd key presses, and the timers for releasing them
+    #[derive(Clone)]
+    struct KeyState {
+        pressed: bool,
+        release_time: std::time::Instant,
+    }
+    // A map holding the time until the wasd key releases should be sent
+    let mut wasd_release_time: std::collections::HashMap<char, KeyState> = std::collections::HashMap::new();
+    wasd_release_time.insert('w', KeyState { pressed: false, release_time: std::time::Instant::now() });
+    wasd_release_time.insert('a', KeyState { pressed: false, release_time: std::time::Instant::now() });
+    wasd_release_time.insert('s', KeyState { pressed: false, release_time: std::time::Instant::now() });
+    wasd_release_time.insert('d', KeyState { pressed: false, release_time: std::time::Instant::now() });
+    
+    let mut free_move_mouse = false;
+    let mut last_mouse_x = 0u16;
+    let mut last_mouse_y = 0u16;
+    
     while running.load(Ordering::SeqCst) {
-        match input_rx.recv_timeout(Duration::from_millis(100)) {
+        match input_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(event) => {
                 match event {
                     InputEvent::Key(key_event) => {
@@ -463,13 +480,25 @@ fn forward_input_to_minecraft(
                                     '.' => run_xdotool(&["key", "period"]),
                                     '^' => run_xdotool(&["key", "asciicircum"]),
                                     '~' => run_xdotool(&["key", "asciitilde"]),
-                                    '`' => run_xdotool(&["key", "grave"]),
                                     '@' => run_xdotool(&["key", "at"]),
                                     '#' => run_xdotool(&["key", "numbersign"]),
                                     '$' => run_xdotool(&["key", "dollar"]),
                                     '%' => run_xdotool(&["key", "percent"]),
                                     '&' => run_xdotool(&["key", "ampersand"]),
                                     '*' => run_xdotool(&["key", "asterisk"]),
+
+                                    '`' => free_move_mouse = !free_move_mouse,
+
+                                    'w' | 'a' | 's' | 'd' => {
+                                        if let Some(state) = wasd_release_time.get_mut(&c) {
+                                            if !state.pressed {
+                                                run_xdotool(&["keydown", &c.to_string()]);
+                                                state.pressed = true;
+                                            }
+                                            state.release_time = std::time::Instant::now() + Duration::from_millis(100);
+                                        }
+                                    },
+
                                     _ => run_xdotool(&["key", &c.to_string()]),
                                 }
                             }
@@ -523,28 +552,39 @@ fn forward_input_to_minecraft(
                         let (game_x, game_y) = scale_mouse_coords(mouse_event.column, mouse_event.row, &term_size_value);
                         
                         // Move the mouse to the scaled coordinates
-                        run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                        if free_move_mouse {
+                            run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                        }
                         
                         // Handle different mouse event types
                         match mouse_event.kind {
                             MouseEventKind::Down(MouseButton::Left) => {
+                                if !free_move_mouse {
+                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                                }
                                 run_xdotool(&["mousedown", "1"]);
                             }
                             MouseEventKind::Up(MouseButton::Left) => {
                                 run_xdotool(&["mouseup", "1"]);
                             }
                             MouseEventKind::Down(MouseButton::Right) => {
-                                run_xdotool(&["mousedown", "3"]);
+                                if !free_move_mouse {
+                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                                }                                run_xdotool(&["mousedown", "3"]);
                             }
                             MouseEventKind::Up(MouseButton::Right) => {
                                 run_xdotool(&["mouseup", "3"]);
                             }
                             MouseEventKind::Drag(MouseButton::Left) => {
-                                // For drag, we've already moved the mouse with the mousemove command
+                                if !free_move_mouse {
+                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                                }                                // For drag, we've already moved the mouse with the mousemove command
                                 // No need to send additional clicks
                             }
                             MouseEventKind::Drag(MouseButton::Right) => {
-                                // For drag, we've already moved the mouse with the mousemove command
+                                if !free_move_mouse {
+                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                                }                                // For drag, we've already moved the mouse with the mousemove command
                                 // No need to send additional clicks
                             }
                             MouseEventKind::ScrollDown => {
@@ -565,6 +605,14 @@ fn forward_input_to_minecraft(
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 // Channel closed, we should exit
                 break;
+            }
+        }
+        
+        // Check for key releases - this should run on every loop iteration
+        for (key, state) in wasd_release_time.iter_mut() {
+            if state.pressed && std::time::Instant::now() >= state.release_time {
+                run_xdotool(&["keyup", &key.to_string()]);
+                state.pressed = false;
             }
         }
     }
