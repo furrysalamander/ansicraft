@@ -448,11 +448,23 @@ fn forward_input_to_minecraft(
     wasd_release_time.insert('s', KeyState { pressed: false, release_time: std::time::Instant::now() });
     wasd_release_time.insert('d', KeyState { pressed: false, release_time: std::time::Instant::now() });
     
-    let mut free_move_mouse = false;
+    // Variables for mouse mode detection and handling
     let mut inventory_open = false;
-    let mut previous_mouse_mode = false;  // To store the mouse mode when inventory is opened
     let mut last_mouse_x = 0u16;
     let mut last_mouse_y = 0u16;
+    let mut expected_mouse_pos: Option<(i32, i32)> = None;
+    let mut position_check_counter = 0;
+    
+    // Get the constants for game center position
+    let game_center_x = GAME_WIDTH as i32 / 2;
+    let game_center_y = GAME_HEIGHT as i32 / 2;
+    
+    // We'll only use two modes now:
+    // 1. Free mouse movement (default) - using mousemove_relative for camera control
+    // 2. Inventory mode - using direct mousemove for UI interaction
+    //
+    // We don't need the mouse mode detection anymore since we'll always use relative movement
+    // when not in inventory mode.
     
     while running.load(Ordering::SeqCst) {
         match input_rx.recv_timeout(Duration::from_millis(50)) {
@@ -497,25 +509,14 @@ fn forward_input_to_minecraft(
                                     '*' => run_xdotool(&["key", "asterisk"]),
 
                                     '`' => {
-                                        // Only toggle free_move_mouse if inventory is not open
-                                        if !inventory_open {
-                                            free_move_mouse = !free_move_mouse;
-                                        }
+                                        // Remove backtick toggle functionality since we're 
+                                        // always using free movement except in inventory
                                     },
                                     
                                     'e' => {
                                         // Toggle inventory state
-                                        if !inventory_open {
-                                            // Save current mouse mode before opening inventory
-                                            previous_mouse_mode = free_move_mouse;
-                                            // Force direct mouse movement when inventory is open
-                                            free_move_mouse = false;
-                                            inventory_open = true;
-                                        } else {
-                                            // Restore previous mouse mode when closing inventory
-                                            free_move_mouse = previous_mouse_mode;
-                                            inventory_open = false;
-                                        }
+                                        inventory_open = !inventory_open;
+                                        
                                         // Send the 'e' keypress to the game
                                         run_xdotool(&["key", "e"]);
                                     },
@@ -539,7 +540,6 @@ fn forward_input_to_minecraft(
                             KeyCode::Esc => {
                                 // If inventory is open, closing with Escape should restore the previous mouse mode
                                 if inventory_open {
-                                    free_move_mouse = previous_mouse_mode;
                                     inventory_open = false;
                                 }
                                 run_xdotool(&["key", "Escape"]);
@@ -587,12 +587,15 @@ fn forward_input_to_minecraft(
                         
                         let (game_x, game_y) = scale_mouse_coords(mouse_event.column, mouse_event.row, &term_size_value);
                         
-                        // Handle mouse movement based on inventory state
+                        // Only two modes now:
+                        // 1. Inventory open: direct mouse movement
+                        // 2. Free movement: relative mouse movement for camera control
+                        
                         if inventory_open {
                             // When inventory is open, always use direct mouse movement
                             run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                        } else if free_move_mouse {
-                            // Only use relative mouse movement when free_move_mouse is enabled and inventory is closed
+                        } else {
+                            // In normal gameplay, use relative mouse movement for camera control
                             if last_mouse_x > 0 && last_mouse_y > 0 {
                                 let (dx, dy) = calculate_relative_movement(game_x, game_y, last_mouse_x, last_mouse_y);
                                 if dx != 0 || dy != 0 {
@@ -608,38 +611,26 @@ fn forward_input_to_minecraft(
                         // Handle different mouse event types
                         match mouse_event.kind {
                             MouseEventKind::Down(MouseButton::Left) => {
-                                if !free_move_mouse {
-                                    // Only move the mouse if we're not in free_move_mouse mode and inventory is closed
-                                    // (inventory_open is already handled above)
-                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                                }
+                                // In inventory mode, we've already positioned the mouse directly
                                 run_xdotool(&["mousedown", "1"]);
                             }
                             MouseEventKind::Up(MouseButton::Left) => {
                                 run_xdotool(&["mouseup", "1"]);
                             }
                             MouseEventKind::Down(MouseButton::Right) => {
-                                if (!free_move_mouse || inventory_open) {
-                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                                }
+                                // In inventory mode, we've already positioned the mouse directly
                                 run_xdotool(&["mousedown", "3"]);
                             }
                             MouseEventKind::Up(MouseButton::Right) => {
                                 run_xdotool(&["mouseup", "3"]);
                             }
                             MouseEventKind::Drag(MouseButton::Left) => {
-                                if (!free_move_mouse || inventory_open) {
-                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                                }
-                                // For drag, we've already moved the mouse with the mousemove command
-                                // No need to send additional clicks
+                                // Mouse movement is already handled above based on mode
+                                // No additional clicks needed for drag
                             }
                             MouseEventKind::Drag(MouseButton::Right) => {
-                                if (!free_move_mouse || inventory_open) {
-                                    run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                                }
-                                // For drag, we've already moved the mouse with the mousemove command
-                                // No need to send additional clicks
+                                // Mouse movement is already handled above based on mode
+                                // No additional clicks needed for drag
                             }
                             MouseEventKind::ScrollDown => {
                                 run_xdotool(&["click", "5"]);
