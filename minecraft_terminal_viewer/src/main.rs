@@ -428,6 +428,13 @@ fn forward_input_to_minecraft(
         (scaled_x, scaled_y)
     }
     
+    // Calculate relative mouse movement between current and last position
+    fn calculate_relative_movement(current_x: u16, current_y: u16, last_x: u16, last_y: u16) -> (i32, i32) {
+        let dx = current_x as i32 - last_x as i32;
+        let dy = current_y as i32 - last_y as i32;
+        (dx * 3, dy * 3) // Scale the movement for better sensitivity
+    }
+    
     // A struct to hold the state of the wasd key presses, and the timers for releasing them
     #[derive(Clone)]
     struct KeyState {
@@ -499,6 +506,14 @@ fn forward_input_to_minecraft(
                                         }
                                     },
 
+                                    'e' => {
+                                        // Make it so that opening the inventory automatically switches to the right mouse
+                                        // TODO: this needs to adjust the mouse scaling, and probably also switch to direct mouse coordinates instead of relative.
+                                        //  until that's implemented, there's no point to automatically switching to the right mouse mode.
+                                        // free_move_mouse = !free_move_mouse;
+                                        run_xdotool(&["key", &c.to_string()]);
+                                    }
+
                                     _ => run_xdotool(&["key", &c.to_string()]),
                                 }
                             }
@@ -551,10 +566,20 @@ fn forward_input_to_minecraft(
                         
                         let (game_x, game_y) = scale_mouse_coords(mouse_event.column, mouse_event.row, &term_size_value);
                         
-                        // Move the mouse to the scaled coordinates
+                        // Handle mouse movement based on the current mode
                         if free_move_mouse {
-                            run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
+                            // In free_move_mouse mode, use relative mouse movement
+                            if last_mouse_x > 0 && last_mouse_y > 0 {
+                                let (dx, dy) = calculate_relative_movement(game_x, game_y, last_mouse_x, last_mouse_y);
+                                if dx != 0 || dy != 0 {
+                                    run_xdotool(&["mousemove_relative", "--", &dx.to_string(), &dy.to_string()]);
+                                }
+                            }
                         }
+                        
+                        // Update last mouse position
+                        last_mouse_x = game_x;
+                        last_mouse_y = game_y;
                         
                         // Handle different mouse event types
                         match mouse_event.kind {
@@ -570,7 +595,8 @@ fn forward_input_to_minecraft(
                             MouseEventKind::Down(MouseButton::Right) => {
                                 if !free_move_mouse {
                                     run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                                }                                run_xdotool(&["mousedown", "3"]);
+                                }
+                                run_xdotool(&["mousedown", "3"]);
                             }
                             MouseEventKind::Up(MouseButton::Right) => {
                                 run_xdotool(&["mouseup", "3"]);
@@ -578,13 +604,15 @@ fn forward_input_to_minecraft(
                             MouseEventKind::Drag(MouseButton::Left) => {
                                 if !free_move_mouse {
                                     run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                                }                                // For drag, we've already moved the mouse with the mousemove command
+                                }
+                                // For drag, we've already moved the mouse with the mousemove command
                                 // No need to send additional clicks
                             }
                             MouseEventKind::Drag(MouseButton::Right) => {
                                 if !free_move_mouse {
                                     run_xdotool(&["mousemove", &game_x.to_string(), &game_y.to_string()]);
-                                }                                // For drag, we've already moved the mouse with the mousemove command
+                                }
+                                // For drag, we've already moved the mouse with the mousemove command
                                 // No need to send additional clicks
                             }
                             MouseEventKind::ScrollDown => {
