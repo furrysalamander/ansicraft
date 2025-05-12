@@ -331,6 +331,7 @@ fn display_render_thread(
             Ok(frame) => {
                 print!("{}", frame);
                 stdout.flush()?;
+                stdout.write("\r\nPress ` to toggle mouse mode.  Press Ctrl+C to exit.\r\n".as_bytes())?;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Timeout is expected, just check if we should keep running
@@ -449,7 +450,7 @@ fn forward_input_to_minecraft(
     wasd_release_time.insert('d', KeyState { pressed: false, release_time: std::time::Instant::now() });
     
     // Variables for mouse mode detection and handling
-    let mut inventory_open = false;
+    let mut inventory_open = true;
     let mut last_mouse_x = 0u16;
     let mut last_mouse_y = 0u16;
     let mut expected_mouse_pos: Option<(i32, i32)> = None;
@@ -511,6 +512,7 @@ fn forward_input_to_minecraft(
                                     '`' => {
                                         // Remove backtick toggle functionality since we're 
                                         // always using free movement except in inventory
+                                        inventory_open = !inventory_open;
                                     },
                                     
                                     'e' => {
