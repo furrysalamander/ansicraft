@@ -64,9 +64,6 @@ fn main() -> io::Result<()> {
         original_hook(panic_info);
     }));
     
-    // println!("Terminal Minecraft Viewer");
-    // println!("Loading Minecraft stream...");
-    
     // Get initial terminal size
     let (term_width, term_height) = size()?;
     
@@ -331,7 +328,7 @@ fn display_render_thread(
             Ok(frame) => {
                 print!("{}", frame);
                 stdout.flush()?;
-                stdout.write("\r\nPress ` to toggle mouse mode.  Press Ctrl+C to exit.\r\n".as_bytes())?;
+                stdout.write("Press ` to toggle mouse mode.  Press Ctrl+C to exit.\r\n".as_bytes())?;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Timeout is expected, just check if we should keep running
@@ -453,12 +450,6 @@ fn forward_input_to_minecraft(
     let mut inventory_open = true;
     let mut last_mouse_x = 0u16;
     let mut last_mouse_y = 0u16;
-    let mut expected_mouse_pos: Option<(i32, i32)> = None;
-    let mut position_check_counter = 0;
-    
-    // Get the constants for game center position
-    let game_center_x = GAME_WIDTH as i32 / 2;
-    let game_center_y = GAME_HEIGHT as i32 / 2;
     
     // We'll only use two modes now:
     // 1. Free mouse movement (default) - using mousemove_relative for camera control
