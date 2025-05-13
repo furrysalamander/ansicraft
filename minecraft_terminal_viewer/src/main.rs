@@ -324,20 +324,34 @@ fn display_render_thread(
     let mut stdout = io::stdout();
     
     while running.load(Ordering::SeqCst) {
-        match render_rx.recv_timeout(Duration::from_millis(100)) {
+        // Try to get the latest frame, draining any previous ones
+        let frame = match render_rx.try_recv() {
             Ok(frame) => {
-                print!("{}", frame);
-                stdout.flush()?;
-                stdout.write("Press ` to toggle mouse mode.  Press Ctrl+C to exit.\r\n".as_bytes())?;
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                // Timeout is expected, just check if we should keep running
-                continue;
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // Channel closed, we should exit
+                // Got a frame, now drain any newer ones that might be waiting
+                let mut latest = frame;
+                while let Ok(newer) = render_rx.try_recv() {
+                    latest = newer; // Keep only the newest frame
+                }
+                Some(latest)
+            },
+            Err(mpsc::TryRecvError::Empty) => {
+                // No frames available, wait for one
+                match render_rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(frame) => Some(frame),
+                    Err(_) => None, // Timeout or disconnected
+                }
+            },
+            Err(mpsc::TryRecvError::Disconnected) => {
+                // Channel closed, exit the loop
                 break;
             }
+        };
+        
+        // Display the frame if we got one
+        if let Some(frame) = frame {
+            print!("{}", frame);
+            stdout.flush()?;
+            stdout.write("Press ` to toggle mouse mode.  Press Ctrl+C to exit.\r\n".as_bytes())?;
         }
     }
     
