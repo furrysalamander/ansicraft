@@ -1,5 +1,5 @@
 # Build stage
-FROM debian:trixie-slim AS builder
+FROM debian:sid-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -27,7 +27,7 @@ COPY minecraft_terminal_viewer/src ./src
 RUN cargo clean --release --package minecraft_terminal_viewer && cargo build --release
 
 # Runtime stage
-FROM debian:trixie-slim
+FROM debian:sid-slim
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -35,15 +35,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xserver-xorg-video-dummy \
     x11-xserver-utils \
     openjdk-21-jre \
-    ffmpeg xdotool git curl jq unzip \
+    ffmpeg xdotool git python3 python3-pip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-# curl, unzip, and jq are needed for the launcher to work
 
-# Clone and init minecraft launcher.
-WORKDIR /root
-RUN git clone https://github.com/alexivkin/minecraft-launcher && \
-    minecraft-launcher/start 1.21.5 docker || true
+# Install minecraft-launcher-lib
+RUN pip3 install --break-system-packages minecraft-launcher-lib
+
+# Create Minecraft directory
+WORKDIR /root/.minecraft
+RUN mkdir -p /root/.minecraft
 
 # Add dummy xorg.conf
 COPY xorg.conf /etc/X11/xorg.conf.dummy
@@ -51,7 +52,12 @@ COPY xorg.conf /etc/X11/xorg.conf.dummy
 # Copy built binary from builder stage
 COPY --from=builder /root/minecraft_terminal_viewer/target/release/minecraft_terminal_viewer /root/termcast
 
+# Copy launcher script
+COPY launch_minecraft.py /root/launch_minecraft.py
+
 # Add entrypoint
 COPY --chmod=0755 entry-point.sh /root/entry-point.sh
+
+# IDK why, but this is needed to make the launcher work.
 
 ENTRYPOINT ["/root/entry-point.sh"]

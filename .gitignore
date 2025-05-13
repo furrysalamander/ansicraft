@@ -38,3 +38,4 @@ docker-compose.override.yml
 # Logs
 *.log
 logs/
+minecraft_data/
