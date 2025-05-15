@@ -1,19 +1,66 @@
+use std::io;
 use std::process::Command;
 use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::os::unix::process::ExitStatusExt;
 
-use crossterm::event::{KeyCode, MouseButton, MouseEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseButton, MouseEventKind};
 
 use crate::config::{GAME_WIDTH, GAME_HEIGHT, TerminalSize, InputEvent};
+
+// Captures keyboard and mouse input using crossterm
+pub fn capture_input(
+    input_tx: mpsc::Sender<InputEvent>, 
+    term_size: Arc<Mutex<TerminalSize>>,
+    running: Arc<AtomicBool>
+) -> io::Result<()> {
+    while running.load(Ordering::SeqCst) {
+        if event::poll(std::time::Duration::from_millis(100))? {
+            match event::read()? {
+                Event::Key(key_event) => {
+                    // Check for exit command (Ctrl+C)
+                    if key_event.code == KeyCode::Char('c') && key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                        running.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                    
+                    // Forward all other key events directly
+                    let _ = input_tx.send(InputEvent::Key(key_event));
+                }
+                Event::Mouse(mouse_event) => {
+                    // Forward all mouse events directly
+                    let _ = input_tx.send(InputEvent::Mouse(mouse_event));
+                }
+                Event::Resize(width, height) => {
+                    // Update terminal size structure when resize occurs
+                    let target_width = width as usize;
+                    // Ensure height is a multiple of 2 for the block character rendering
+                    let target_height = ((target_width * 9 / 16 + 1) / 2) * 2;
+                    
+                    // Update shared terminal size
+                    {
+                        let mut size = term_size.lock().unwrap();
+                        size.width = width;
+                        size.height = height;
+                        size.target_width = target_width;
+                        size.target_height = target_height;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    
+    Ok(())
+}
 
 // Forwards captured input to the Minecraft instance
 pub fn forward_input_to_minecraft(
     input_rx: mpsc::Receiver<InputEvent>, 
     term_size: Arc<Mutex<TerminalSize>>,
     running: Arc<AtomicBool>
-) {
+) -> io::Result<()>{
     // Helper function to run xdotool commands
     fn run_xdotool(args: &[&str]) {
         Command::new("xdotool")
@@ -268,4 +315,5 @@ pub fn forward_input_to_minecraft(
             }
         }
     }
+    Ok(())
 }

@@ -79,36 +79,16 @@ fn main() -> io::Result<()> {
     
     // Channels for communication between threads
     // let (render_tx, render_rx) = mpsc::channel();
-    let (input_tx, input_rx) = mpsc::channel();
-    let (resize_tx, resize_rx) = mpsc::channel();
     
     // Clone Arc for each thread
-    let running_input = Arc::clone(&running);
-    let running_render = Arc::clone(&running);
-    let running_display = Arc::clone(&running);
-    let running_forward = Arc::clone(&running);
-    let term_size_render = Arc::clone(&term_size);
-    let term_size_input = Arc::clone(&term_size);
-    let term_size_display = Arc::clone(&term_size);
-    let term_size_forward = Arc::clone(&term_size);
-    
-    // Start the input capture thread (now also handles resize events)
-    let input_handle = thread::spawn(move || {
-        if let Err(e) = capture_input(input_tx, resize_tx, term_size_input, running_input) {
-            eprintln!("Input capture error: {}", e);
-        }
-    });
-    
-    // Start the input forwarding thread
-    let input_rx_handle = thread::spawn(move || {
-        xdo::forward_input_to_minecraft(input_rx, term_size_forward, running_forward);
-    });
+    let run_minecraft = Arc::clone(&running);
+    let terminal_size = Arc::clone(&term_size);
 
     let stdout = Arc::new(Mutex::new(std::io::stdout()));
     let stdin = Arc::new(Mutex::new(std::io::stdin()));
     
     let render_handle = thread::spawn(move || {
-        minecraft::run(minecraft::MinecraftConfig { xorg_display: 1, username: "docker".to_string(), server_address: "".to_string() }, running_render, stdout, stdin, term_size_render);
+        minecraft::run(minecraft::MinecraftConfig { xorg_display: 1, username: "docker".to_string(), server_address: "".to_string() }, run_minecraft, stdout, stdin, terminal_size);
     });
     
 
@@ -136,71 +116,9 @@ fn main() -> io::Result<()> {
 
     
     // Wait for a thread to finish (this indicates we should stop)
-    let _ = input_handle.join();
-    
-    // Signal all threads to stop
-    // running.store(false, Ordering::SeqCst);
-    
-    // Clean up terminal
-    
-    // Give threads a chance to exit gracefully
-    // thread::sleep(Duration::from_millis(100));
-    
-    // Wait for threads to finish with a timeout
-    let _ = input_rx_handle.join();
-    // let _ = render_rx_handle.join();  // Commented out as this thread is not being started
     let _ = render_handle.join();
     cleanup_terminal()?;
     
     Ok(())
 }
 
-// Captures keyboard and mouse input using crossterm
-fn capture_input(
-    input_tx: mpsc::Sender<InputEvent>, 
-    resize_tx: mpsc::Sender<()>,
-    term_size: Arc<Mutex<TerminalSize>>,
-    running: Arc<AtomicBool>
-) -> io::Result<()> {
-    while running.load(Ordering::SeqCst) {
-        if event::poll(std::time::Duration::from_millis(100))? {
-            match event::read()? {
-                Event::Key(key_event) => {
-                    // Check for exit command (Ctrl+C)
-                    if key_event.code == KeyCode::Char('c') && key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                        running.store(false, Ordering::SeqCst);
-                        break;
-                    }
-                    
-                    // Forward all other key events directly
-                    let _ = input_tx.send(InputEvent::Key(key_event));
-                }
-                Event::Mouse(mouse_event) => {
-                    // Forward all mouse events directly
-                    let _ = input_tx.send(InputEvent::Mouse(mouse_event));
-                }
-                Event::Resize(width, height) => {
-                    // Update terminal size structure when resize occurs
-                    let target_width = width as usize;
-                    // Ensure height is a multiple of 2 for the block character rendering
-                    let target_height = ((target_width * 9 / 16 + 1) / 2) * 2;
-                    
-                    // Update shared terminal size
-                    {
-                        let mut size = term_size.lock().unwrap();
-                        size.width = width;
-                        size.height = height;
-                        size.target_width = target_width;
-                        size.target_height = target_height;
-                    }
-                    
-                    // Send resize event to trigger ffmpeg restart
-                    let _ = resize_tx.send(());
-                }
-                _ => {}
-            }
-        }
-    }
-    
-    Ok(())
-}

@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::render;
+use crate::{render, xdo};
 use crate::config::TerminalSize;
 use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
 use crossterm::{self, queue};
@@ -130,16 +130,30 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     run_minecraft(config, running.clone())?;
     
     let (completed_frames_tx, completed_frames_rx) = mpsc::channel();
+    let (input_event_tx, input_event_rx) = mpsc::channel();
 
     let mut children = vec![];
 
+    // Clone Arc for each thread
+    let running_render = Arc::clone(&running);
+    let running_input = Arc::clone(&running);
+    let running_forward = Arc::clone(&running);
+    let terminal_size_render = Arc::clone(&terminal_size);
+    let terminal_size_input = Arc::clone(&terminal_size);
+    let terminal_size_forward = Arc::clone(&terminal_size);
+
     // I should rename this to be "render xorg display to unicode"
     children.push(thread::spawn(move || {
-        render::render_x11_window(completed_frames_tx, terminal_size, running)
+        render::render_x11_window(completed_frames_tx, terminal_size_render, running_render)
     }));
-
     children.push(thread::spawn(move || {
         display_render_thread(completed_frames_rx, output_channel)
+    }));
+    children.push(thread::spawn(move || {
+        xdo::capture_input(input_event_tx, terminal_size_input, running_input)
+    }));
+    children.push(thread::spawn(move || {
+        xdo::forward_input_to_minecraft(input_event_rx, terminal_size_forward, running_forward)
     }));
 
     for child in children {
