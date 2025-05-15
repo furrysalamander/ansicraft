@@ -1,5 +1,5 @@
 // filepath: /home/mike/source/docker-minecraft-rtsp/minecraft_terminal_viewer/src/render.rs
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Write, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -107,7 +107,7 @@ pub fn render_minecraft_directly(
 
 // Renders an arbitrary bytes buffer to the terminal
 fn render_byte_stream<R: Read>(
-    mut buffer: R,
+    buffer: R,
     height: usize,
     width: usize,
     offset_x: usize,
@@ -117,6 +117,9 @@ fn render_byte_stream<R: Read>(
 ) -> io::Result<()> {
     // The size of the static buffer for holding raw frame data
     let buffer_size = height * width * 3;
+    
+    // Create a buffered reader to allow peeking and discarding
+    let mut buf_reader = BufReader::with_capacity(buffer_size * 4, buffer);
     
     // The buffer for holding the raw RGB values for the current frame
     let mut frame_data = vec![0u8; buffer_size];
@@ -128,8 +131,24 @@ fn render_byte_stream<R: Read>(
         // Start by moving the cursor to the appropriate coordinates
         output.push_str(&format!("\x1b[{};{}H", offset_y, offset_x));
         
+        // Check if we need to drop frames to catch up
+        // This is similar to the Go code's frame dropping logic
+        while buf_reader.buffer().len() > buffer_size * 2 {
+            // Too many frames have accumulated, discard one frame to catch up
+            let mut discard_buffer = vec![0u8; buffer_size];
+            match buf_reader.read_exact(&mut discard_buffer) {
+                Ok(_) => {
+                    // Frame successfully discarded
+                }
+                Err(_) => {
+                    // Error reading, just break from discard loop
+                    break;
+                }
+            }
+        }
+        
         // Fill the frame_data buffer with a single frame's worth of pixel information
-        match buffer.read_exact(&mut frame_data) {
+        match buf_reader.read_exact(&mut frame_data) {
             Ok(_) => {
                 // Iterate through the frame two rows at a time
                 for row_index in (0..height).step_by(2) {
