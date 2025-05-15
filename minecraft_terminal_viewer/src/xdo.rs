@@ -5,8 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
-use image::buffer;
-use termwiz::input::{self, InputEvent, InputParser, KeyCode, KeyEvent, Modifiers, MouseButtons, MouseEvent};
+use termwiz::input::{InputEvent, InputParser, KeyCode, Modifiers, MouseButtons};
 
 use crate::config::{TerminalSize, GAME_HEIGHT, GAME_WIDTH};
 
@@ -14,7 +13,6 @@ use crate::config::{TerminalSize, GAME_HEIGHT, GAME_WIDTH};
 pub fn capture_input<Reader: io::Read + Send + 'static>(
     input_channel: Arc<Mutex<Reader>>,
     input_tx: mpsc::Sender<InputEvent>,
-    term_size: Arc<Mutex<TerminalSize>>,
     running: Arc<AtomicBool>,
 ) -> io::Result<()> {
     // let (bytes_tx, bytes_rx) = mpsc::channel::<Vec<u8>>();
@@ -33,11 +31,15 @@ pub fn capture_input<Reader: io::Read + Send + 'static>(
                 break;
             }
             Ok(n) => {
-                parser.parse(&buf[0..n], |event| {input_tx.send(event);},true);
+                parser.parse(&buf[0..n], |event| {
+                    if let Err(e) = input_tx.send(event) {
+                        eprintln!("Error sending event: {}", e);
+                    }
+                },true);
             }
         }
     }
-    
+
     Ok(())
 }
 

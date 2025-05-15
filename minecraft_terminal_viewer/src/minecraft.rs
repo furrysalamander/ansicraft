@@ -137,7 +137,6 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     let running_input = Arc::clone(&running);
     let running_forward = Arc::clone(&running);
     let terminal_size_render = Arc::clone(&terminal_size);
-    let terminal_size_input = Arc::clone(&terminal_size);
     let terminal_size_forward = Arc::clone(&terminal_size);
 
     children.push(thread::spawn(move || {
@@ -147,7 +146,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
         display_render_thread(completed_frames_rx, output_channel)
     }));
     children.push(thread::spawn(move || {
-        xdo::capture_input(input_channel, input_event_tx, terminal_size_input, running_input)
+        xdo::capture_input(input_channel, input_event_tx, running_input)
     }));
     children.push(thread::spawn(move || {
         xdo::forward_input_to_minecraft(input_event_rx, terminal_size_forward, running_forward)

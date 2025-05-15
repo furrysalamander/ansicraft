@@ -1,5 +1,5 @@
 // filepath: /home/mike/source/docker-minecraft-rtsp/minecraft_terminal_viewer/src/render.rs
-use std::io::{self, Read, Write, BufReader};
+use std::io::{self, Read, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};

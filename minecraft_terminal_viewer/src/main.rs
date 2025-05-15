@@ -58,7 +58,7 @@ fn main() -> io::Result<()> {
     }));
     
     // Get initial terminal size
-    let (term_width, term_height) = size()?;
+    let (term_width, _term_height) = size()?;
     
     // Calculate target dimensions (must be even height for the block character approach)
     let target_width = term_width as usize;
@@ -67,8 +67,8 @@ fn main() -> io::Result<()> {
     
     // Create a shared terminal size that can be updated on resize
     let term_size = Arc::new(Mutex::new(TerminalSize {
-        width: term_width,
-        height: term_height,
+        // width: term_width,
+        // height: term_height,
         target_width,
         target_height,
     }));
@@ -84,7 +84,9 @@ fn main() -> io::Result<()> {
     let stdin = Arc::new(Mutex::new(std::io::stdin()));
     
     let render_handle = thread::spawn(move || {
-        minecraft::run(minecraft::MinecraftConfig { xorg_display: 1, username: "docker".to_string(), server_address: "".to_string() }, run_minecraft, stdout, stdin, terminal_size);
+        if let Err(e) = minecraft::run(minecraft::MinecraftConfig { xorg_display: 1, username: "docker".to_string(), server_address: "".to_string() }, run_minecraft, stdout, stdin, terminal_size) {
+            eprintln!("Error in Minecraft thread: {:?}", e);
+        }
     });
     
     // crossterm::execute!(
