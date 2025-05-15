@@ -1,28 +1,43 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc};
 
+use crate::config::{self, TerminalSize};
+use crate::minecraft;
 use rand_core::OsRng;
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use ratatui::{TerminalOptions, Viewport};
-use ratatui;
 use russh::keys::ssh_key::{self, PublicKey};
 use russh::server::*;
 use russh::{Channel, ChannelId, Pty};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Mutex;
+use tokio::time::interval_at;
 
-type SshTerminal = ratatui::Terminal<CrosstermBackend<TerminalHandle>>;
-
-struct App {
-    pub counter: usize,
+struct MinecraftInstance {
+    terminal_size: Arc<std::sync::Mutex<config::TerminalSize>>,
+    running: Arc<AtomicBool>,
+    stdin_writer: pipe::PipeWriter,
 }
 
-impl App {
-    pub fn new() -> App {
-        Self { counter: 0 }
+impl MinecraftInstance {
+    pub fn new<W: std::io::Write + Send + 'static>(writer: W) -> MinecraftInstance {
+        let (stdin_reader, stdin_writer) = pipe::pipe();
+
+        let potato = Self {
+            terminal_size: Arc::new(std::sync::Mutex::new(TerminalSize {
+                target_width: 1,
+                target_height: 1,
+            })),
+            running: Arc::new(AtomicBool::new(true)),
+            stdin_writer: stdin_writer
+        };
+
+        let config = minecraft::MinecraftConfig{ xorg_display: 1, username: "docker".to_owned(), server_address: "".to_owned() };
+
+        let output_channel = Arc::new(std::sync::Mutex::new(writer));
+        let input_channel = Arc::new(std::sync::Mutex::new(stdin_reader));
+        minecraft::run(config, Arc::clone(&potato.running), output_channel, input_channel, Arc::clone(&potato.terminal_size));
+        potato
     }
 }
 
@@ -72,12 +87,12 @@ impl std::io::Write for TerminalHandle {
 }
 
 #[derive(Clone)]
-struct AppServer {
-    clients: Arc<Mutex<HashMap<usize, (SshTerminal, App)>>>,
+pub struct MinecraftClientServer {
+    clients: Arc<Mutex<HashMap<usize, MinecraftInstance>>>,
     id: usize,
 }
 
-impl AppServer {
+impl MinecraftClientServer {
     pub fn new() -> Self {
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
@@ -88,32 +103,32 @@ impl AppServer {
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
         let clients = self.clients.clone();
         tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            // loop {
+            //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-                for (_, (terminal, app)) in clients.lock().await.iter_mut() {
-                    app.counter += 1;
+            //     for (_, (terminal, app)) in clients.lock().await.iter_mut() {
+            //         app.counter += 1;
 
-                    terminal
-                        .draw(|f| {
-                            let area = f.area();
-                            f.render_widget(Clear, area);
-                            let style = match app.counter % 3 {
-                                0 => Style::default().fg(Color::Red),
-                                1 => Style::default().fg(Color::Green),
-                                _ => Style::default().fg(Color::Blue),
-                            };
-                            let paragraph = Paragraph::new(format!("Counter: {}", app.counter))
-                                .alignment(ratatui::layout::Alignment::Center)
-                                .style(style);
-                            let block = Block::default()
-                                .title("Press 'c' to reset the counter!")
-                                .borders(Borders::ALL);
-                            f.render_widget(paragraph.block(block), area);
-                        })
-                        .unwrap();
-                }
-            }
+            //         terminal
+            //             .draw(|f| {
+            //                 let area = f.area();
+            //                 f.render_widget(Clear, area);
+            //                 let style = match app.counter % 3 {
+            //                     0 => Style::default().fg(Color::Red),
+            //                     1 => Style::default().fg(Color::Green),
+            //                     _ => Style::default().fg(Color::Blue),
+            //                 };
+            //                 let paragraph = Paragraph::new(format!("Counter: {}", app.counter))
+            //                     .alignment(ratatui::layout::Alignment::Center)
+            //                     .style(style);
+            //                 let block = Block::default()
+            //                     .title("Press 'c' to reset the counter!")
+            //                     .borders(Borders::ALL);
+            //                 f.render_widget(paragraph.block(block), area);
+            //             })
+            //             .unwrap();
+            //     }
+            // }
         });
 
         let config = Config {
@@ -133,7 +148,7 @@ impl AppServer {
     }
 }
 
-impl Server for AppServer {
+impl russh::server::Server for MinecraftClientServer {
     type Handler = Self;
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self {
         let s = self.clone();
@@ -142,7 +157,7 @@ impl Server for AppServer {
     }
 }
 
-impl Handler for AppServer {
+impl russh::server::Handler for MinecraftClientServer {
     type Error = anyhow::Error;
 
     async fn channel_open_session(
@@ -152,18 +167,19 @@ impl Handler for AppServer {
     ) -> Result<bool, Self::Error> {
         let terminal_handle = TerminalHandle::start(session.handle(), channel.id()).await;
 
-        let backend = CrosstermBackend::new(terminal_handle);
+        // let backend = CrosstermBackend::new(terminal_handle);
 
-        // the correct viewport area will be set when the client request a pty
-        let options = TerminalOptions {
-            viewport: Viewport::Fixed(Rect::default()),
-        };
+        // // the correct viewport area will be set when the client request a pty
+        // let options = TerminalOptions {
+        //     viewport: ratatui::Viewport::Fixed(Rect::default()),
+        // };
 
-        let terminal = ratatui::Terminal::with_options(backend, options)?;
-        let app = App::new();
+        // let terminal = ratatui::Terminal::with_options(backend, options)?;
+
+        let app = MinecraftInstance::new(terminal_handle);
 
         let mut clients = self.clients.lock().await;
-        clients.insert(self.id, (terminal, app));
+        clients.insert(self.id, app);
 
         Ok(true)
     }
@@ -178,21 +194,21 @@ impl Handler for AppServer {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        match data {
-            // Pressing 'q' closes the connection.
-            b"q" => {
-                self.clients.lock().await.remove(&self.id);
-                session.close(channel)?;
-            }
-            // Pressing 'c' resets the counter for the app.
-            // Only the client with the id sees the counter reset.
-            b"c" => {
-                let mut clients = self.clients.lock().await;
-                let (_, app) = clients.get_mut(&self.id).unwrap();
-                app.counter = 0;
-            }
-            _ => {}
-        }
+        // match data {
+        //     // Pressing 'q' closes the connection.
+        //     b"q" => {
+        //         self.clients.lock().await.remove(&self.id);
+        //         session.close(channel)?;
+        //     }
+        //     // Pressing 'c' resets the counter for the app.
+        //     // Only the client with the id sees the counter reset.
+        //     b"c" => {
+        //         let mut clients = self.clients.lock().await;
+        //         let app = clients.get_mut(&self.id).unwrap();
+        //         app.counter = 0;
+        //     }
+        //     _ => {}
+        // }
 
         Ok(())
     }
@@ -215,8 +231,11 @@ impl Handler for AppServer {
         };
 
         let mut clients = self.clients.lock().await;
-        let (terminal, _) = clients.get_mut(&self.id).unwrap();
-        terminal.resize(rect)?;
+        let instance = clients.get_mut(&self.id).unwrap();
+
+        let mut size = instance.terminal_size.lock().unwrap();
+        size.target_width = col_width as usize;
+        size.target_height = row_height as usize;
 
         Ok(())
     }
@@ -245,8 +264,11 @@ impl Handler for AppServer {
         };
 
         let mut clients = self.clients.lock().await;
-        let (terminal, _) = clients.get_mut(&self.id).unwrap();
-        terminal.resize(rect)?;
+        let instance = clients.get_mut(&self.id).unwrap();
+        
+        let mut size = instance.terminal_size.lock().unwrap();
+        size.target_width = col_width as usize;
+        size.target_height = row_height as usize;
 
         session.channel_success(channel)?;
 
@@ -254,12 +276,16 @@ impl Handler for AppServer {
     }
 }
 
-impl Drop for AppServer {
+impl Drop for MinecraftClientServer {
     fn drop(&mut self) {
         let id = self.id;
         let clients = self.clients.clone();
         tokio::spawn(async move {
             let mut clients = clients.lock().await;
+            let instance = clients.get_mut(&id).unwrap();
+            
+            instance.running.store(false, Ordering::SeqCst);
+
             clients.remove(&id);
         });
     }
@@ -267,6 +293,6 @@ impl Drop for AppServer {
 
 #[tokio::main]
 async fn main() {
-    let mut server = AppServer::new();
+    let mut server = MinecraftClientServer::new();
     server.run().await.expect("Failed running server");
 }
