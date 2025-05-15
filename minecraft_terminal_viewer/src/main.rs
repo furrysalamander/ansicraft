@@ -5,17 +5,16 @@ mod xdo;
 mod minecraft;
 
 use config::TerminalSize;
-use config::InputEvent;
 
 use std::io;
-use std::sync::{mpsc, Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::panic;
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self},
     execute,
     terminal::{self, Clear, ClearType, size},
 };

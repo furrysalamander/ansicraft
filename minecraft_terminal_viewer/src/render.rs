@@ -4,7 +4,6 @@ use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
 
 use crossterm::{
     execute,
