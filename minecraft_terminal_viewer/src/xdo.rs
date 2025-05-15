@@ -37,70 +37,7 @@ pub fn capture_input<Reader: io::Read + Send + 'static>(
             }
         }
     }
-
-    // // Spawn a thread to read from the provided reader
-    // std::thread::spawn(move || {
-    //     let mut reader = reader;
-    //     let mut buf = [0u8; 1024];
-    //     loop {
-    //         match reader.read(&mut buf) {
-    //             Ok(0) => break, // EOF
-    //             Ok(n) => {
-    //                 let bytes = buf[..n].to_vec();
-    //                 if bytes_tx.send(bytes).is_err() {
-    //                     break;
-    //                 }
-    //             }
-    //             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-    //                 std::thread::sleep(Duration::from_millis(100));
-    //             }
-    //             Err(e) => {
-    //                 eprintln!("Error reading input: {}", e);
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // });
-
-    // let mut parser: InputParser = InputParser::new();
-
-    // while running.load(Ordering::SeqCst) {
-    //     match bytes_rx.recv_timeout(Duration::from_millis(10)) {
-    //         Ok(bytes) => {
-    //             parser.parse(&bytes);
-    //             for event in parser.iter() {
-    //                 match event {
-    //                     InputEvent::Key(key_event) => {
-    //                         // Check for Ctrl+C
-    //                         if key_event.key == KeyCode::Char('c') && key_event.modifiers.contains(Modifiers::CTRL)
-    //                         {
-    //                             running.store(false, Ordering::SeqCst);
-    //                             break;
-    //                         }
-    //                         let _ = input_tx.send(InputEvent::Key(key_event));
-    //                     }
-    //                     InputEvent::Mouse(mouse_event) => {
-    //                         let _ = input_tx.send(InputEvent::Mouse(mouse_event));
-    //                     }
-    //                     // InputEvent::Resized { cols, rows } => {
-    //                     //     // Update terminal size structure
-    //                     //     let target_width = cols as usize;
-    //                     //     let target_height = ((target_width * 9 / 16 + 1) / 2) * 2;
-    //                     //     let mut size = term_size.lock().unwrap();
-    //                     //     size.width = cols;
-    //                     //     size.height = rows;
-    //                     //     size.target_width = target_width;
-    //                     //     size.target_height = target_height;
-    //                     // }
-    //                     _ => {}
-    //                 }
-    //             }
-    //         }
-    //         Err(mpsc::RecvTimeoutError::Timeout) => continue,
-    //         Err(mpsc::RecvTimeoutError::Disconnected) => break,
-    //     }
-    // }
-
+    
     Ok(())
 }
 
