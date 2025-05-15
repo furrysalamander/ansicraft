@@ -3,6 +3,7 @@ mod config;
 mod render;
 mod xdo;
 mod minecraft;
+mod ssh;
 
 use config::TerminalSize;
 
