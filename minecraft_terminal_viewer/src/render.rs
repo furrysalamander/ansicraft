@@ -16,7 +16,6 @@ use crate::config::{FFMPEG_BINARY, TerminalSize, GAME_HEIGHT, GAME_WIDTH};
 // Renders the Minecraft X11 screen directly to the terminal with resize support
 pub fn render_x11_window(
     render_tx: mpsc::Sender<String>, 
-    resize_rx: mpsc::Receiver<()>,
     term_size: Arc<Mutex<TerminalSize>>,
     running: Arc<AtomicBool>
 ) -> io::Result<()> {
@@ -81,16 +80,6 @@ pub fn render_x11_window(
             // Update last dimensions
             last_width = target_width;
             last_height = target_height;
-        }
-        
-        // Wait for a resize event or exit
-        match resize_rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(_) => continue, // Resize event received, restart ffmpeg on next loop
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                running.store(false, Ordering::SeqCst);
-                break;
-            }
         }
     }
     

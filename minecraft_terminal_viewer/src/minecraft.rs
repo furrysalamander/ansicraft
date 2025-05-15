@@ -16,6 +16,7 @@ pub struct MinecraftConfig {
     pub server_address: String,
 }
 
+// TODO: Maybe I should put this in the render crate...?
 fn display_render_thread<Writer: std::io::Write + Send + 'static>(
     completed_frames: mpsc::Receiver<String>, 
     output_channel: Arc<Mutex<Writer>>
@@ -118,8 +119,6 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
     Ok(())
 }
 
-// fn render_minecraft() {}
-
 pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send + 'static>(
     config: MinecraftConfig,
     running: Arc<AtomicBool>,
@@ -132,15 +131,11 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     
     let (completed_frames_tx, completed_frames_rx) = mpsc::channel();
 
-    // tmp
-    let (resize_tx, resize_rx) = mpsc::channel();
-
-
     let mut children = vec![];
 
     // I should rename this to be "render xorg display to unicode"
     children.push(thread::spawn(move || {
-        render::render_x11_window(completed_frames_tx, resize_rx, terminal_size, running)
+        render::render_x11_window(completed_frames_tx, terminal_size, running)
     }));
 
     children.push(thread::spawn(move || {
