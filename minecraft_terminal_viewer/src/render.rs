@@ -123,7 +123,7 @@ fn render_byte_stream<R: Read>(
     
     while running.load(Ordering::SeqCst) {
         // For holding the formatted escape sequence
-        let mut output = String::new();
+        let mut output = String::with_capacity(13 + (height/2) * (width * 41 + 8));
         
         // Start by moving the cursor to the appropriate coordinates
         output.push_str(&format!("\x1b[{};{}H", offset_y, offset_x));

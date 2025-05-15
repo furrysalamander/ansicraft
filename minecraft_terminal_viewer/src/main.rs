@@ -66,7 +66,7 @@ fn main() -> io::Result<()> {
     let running = Arc::new(AtomicBool::new(true));
     
     // Channels for communication between threads
-    let (render_tx, render_rx) = mpsc::channel();
+    // let (render_tx, render_rx) = mpsc::channel();
     let (input_tx, input_rx) = mpsc::channel();
     let (resize_tx, resize_rx) = mpsc::channel();
     
@@ -91,37 +91,44 @@ fn main() -> io::Result<()> {
     let input_rx_handle = thread::spawn(move || {
         xdo::forward_input_to_minecraft(input_rx, term_size_forward, running_forward);
     });
+
+    let stdout = Arc::new(Mutex::new(std::io::stdout()));
+    let stdin = Arc::new(Mutex::new(std::io::stdin()));
     
-    // Start the rendering thread
-    let render_rx_handle = thread::spawn(move || {
-        if let Err(e) = render::old_display_render_thread(render_rx, term_size_display, running_display) {
-            eprintln!("Render display error: {}", e);
-        }
-    });
-    
-    // Start the Minecraft rendering thread
     let render_handle = thread::spawn(move || {
-        if let Err(e) = render::render_minecraft_directly(render_tx, resize_rx, term_size_render, running_render) {
-            eprintln!("Render error: {}", e);
-        }
+        minecraft::run(minecraft::MinecraftConfig { xorg_display: 8, username: "".to_string(), server_address: "".to_string() }, running_render, stdout, stdin, term_size_render);
     });
+    
+    // // Start the rendering thread
+    // let render_rx_handle = thread::spawn(move || {
+    //     if let Err(e) = render::old_display_render_thread(render_rx, term_size_display, running_display) {
+    //         eprintln!("Render display error: {}", e);
+    //     }
+    // });
+    
+    // // Start the Minecraft rendering thread
+    // let render_handle = thread::spawn(move || {
+    //     if let Err(e) = render::render_minecraft_directly(render_tx, resize_rx, term_size_render, running_render) {
+    //         eprintln!("Render error: {}", e);
+    //     }
+    // });
     
     // Wait for a thread to finish (this indicates we should stop)
     let _ = input_handle.join();
     
     // Signal all threads to stop
-    running.store(false, Ordering::SeqCst);
+    // running.store(false, Ordering::SeqCst);
     
     // Clean up terminal
-    render::cleanup_terminal()?;
     
     // Give threads a chance to exit gracefully
-    thread::sleep(Duration::from_millis(100));
+    // thread::sleep(Duration::from_millis(100));
     
     // Wait for threads to finish with a timeout
     let _ = input_rx_handle.join();
-    let _ = render_rx_handle.join();
+    // let _ = render_rx_handle.join();  // Commented out as this thread is not being started
     let _ = render_handle.join();
+    render::cleanup_terminal()?;
     
     Ok(())
 }
