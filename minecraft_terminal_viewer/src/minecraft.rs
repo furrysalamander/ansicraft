@@ -21,15 +21,19 @@ struct MinecraftConfig {
 struct MinecraftInstance {
 }
 
-fn display_render_thread<Writer: std::io::Write + Send + std::marker::Send>(completed_frames: mpsc::Receiver<String>, output_channel: Arc<Mutex<Writer>>) -> io::Result<()> {
-    let mut real_output_channel = output_channel.as_ref().;
+fn display_render_thread<Writer: std::io::Write>(
+    completed_frames: mpsc::Receiver<String>, 
+    output_channel: Arc<Mutex<Writer>>
+) -> io::Result<()> {
     loop {
         match completed_frames.recv_timeout(Duration::from_millis(1)) {
             Ok(frame) => {
-                execute!(real_output_channel, BeginSynchronizedUpdate)?;
+                let mut writer = output_channel.lock().expect("Failed to lock mutex");
+                
+                execute!(writer, BeginSynchronizedUpdate)?;
                 // I wonder if we want to add a clear here.
-                real_output_channel.write(frame.as_bytes());
-                execute!(real_output_channel, EndSynchronizedUpdate)?;
+                writer.write(frame.as_bytes())?;
+                execute!(writer, EndSynchronizedUpdate)?;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 continue;
@@ -46,10 +50,10 @@ fn process_inputs() {}
 
 pub fn resize(x: u8, y: u8) {}
 
-pub fn new<Writer: std::io::Write + Send + std::marker::Send, Reader: std::io::Read>(
+pub fn new<Writer: std::io::Write, Reader: std::io::Read>(
     config: MinecraftConfig,
     running: Arc<AtomicBool>,
-    output_channel: Arc<&mut Writer>,
+    output_channel: Arc<Mutex<Writer>>,
     input_channel: Reader,
     terminal_size: Arc<Mutex<TerminalSize>>,
 ) {
