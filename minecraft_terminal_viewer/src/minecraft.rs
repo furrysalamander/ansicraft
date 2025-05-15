@@ -6,8 +6,8 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::render;
 use crate::config::TerminalSize;
-use crate::render::{self, cleanup_terminal, old_display_render_thread};
 use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
 use crossterm::{self, cursor, event, execute, queue, terminal};
 
@@ -142,7 +142,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
 
     // I should rename this to be "render xorg display to unicode"
     children.push(thread::spawn(move || {
-        render::render_minecraft_directly(completed_frames_tx, resize_rx, terminal_size, running)
+        render::render_x11_window(completed_frames_tx, resize_rx, terminal_size, running)
     }));
 
     children.push(thread::spawn(move || {
@@ -154,27 +154,6 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
         let _ = child.join();
     }
 
-    // crossterm::execute!(
-    //     output_channel,
-    //     event::EnableMouseCapture,
-    //     event::EnableFocusChange,
-    //     terminal::EnterAlternateScreen,
-    //     cursor::Hide
-    // );
 
-
-
-    // // need channels for:
-    // //  resize events
-    // //  cancellation
-    // //  shutting down
-
-    // crossterm::execute!(
-    //     output_channel,
-    //     event::DisableMouseCapture,
-    //     event::DisableFocusChange,
-    //     terminal::LeaveAlternateScreen,
-    //     cursor::Show,
-    // );
     Ok(())
 }

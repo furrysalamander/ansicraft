@@ -16,7 +16,7 @@ use crossterm::{
 use crate::config::{FFMPEG_BINARY, TerminalSize, GAME_HEIGHT, GAME_WIDTH};
 
 // Renders the Minecraft X11 screen directly to the terminal with resize support
-pub fn render_minecraft_directly(
+pub fn render_x11_window(
     render_tx: mpsc::Sender<String>, 
     resize_rx: mpsc::Receiver<()>,
     term_size: Arc<Mutex<TerminalSize>>,
@@ -189,61 +189,5 @@ fn render_byte_stream<R: Read>(
         }
     }
     
-    Ok(())
-}
-
-// Display the rendered frames
-pub fn old_display_render_thread(
-    render_rx: mpsc::Receiver<String>, 
-    _term_size: Arc<Mutex<TerminalSize>>,
-    running: Arc<AtomicBool>
-) -> io::Result<()> {
-    let mut stdout = io::stdout();
-    
-    while running.load(Ordering::SeqCst) {
-        // Try to get the latest frame, draining any previous ones
-        let frame = match render_rx.try_recv() {
-            Ok(frame) => {
-                // Got a frame, now drain any newer ones that might be waiting
-                let mut latest = frame;
-                while let Ok(newer) = render_rx.try_recv() {
-                    latest = newer; // Keep only the newest frame
-                }
-                Some(latest)
-            },
-            Err(mpsc::TryRecvError::Empty) => {
-                // No frames available, wait for one
-                match render_rx.recv_timeout(Duration::from_millis(100)) {
-                    Ok(frame) => Some(frame),
-                    Err(_) => None, // Timeout or disconnected
-                }
-            },
-            Err(mpsc::TryRecvError::Disconnected) => {
-                // Channel closed, exit the loop
-                break;
-            }
-        };
-        
-        // Display the frame if we got one
-        if let Some(frame) = frame {
-            print!("{}", frame);
-            stdout.flush()?;
-            stdout.write("Press ` to toggle mouse mode.  Press Ctrl+C to exit.\r\n".as_bytes())?;
-        }
-    }
-    
-    Ok(())
-}
-
-// Function to clean up terminal state
-pub fn cleanup_terminal() -> io::Result<()> {
-    let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        event::DisableMouseCapture,
-        terminal::LeaveAlternateScreen,
-        cursor::Show
-    )?;
-    terminal::disable_raw_mode()?;
     Ok(())
 }

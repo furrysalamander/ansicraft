@@ -21,6 +21,19 @@ use crossterm::{
     terminal::{self, Clear, ClearType, size},
 };
 
+// Function to clean up terminal state
+pub fn cleanup_terminal() -> io::Result<()> {
+    let mut stdout = io::stdout();
+    execute!(
+        stdout,
+        event::DisableMouseCapture,
+        terminal::LeaveAlternateScreen,
+        cursor::Show
+    )?;
+    terminal::disable_raw_mode()?;
+    Ok(())
+}
+
 // Main function with error handling
 fn main() -> io::Result<()> {
     // Clear the terminal
@@ -41,7 +54,7 @@ fn main() -> io::Result<()> {
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
         // Clean up terminal
-        let _ = render::cleanup_terminal();
+        let _ = cleanup_terminal();
         // Then call the original panic handler
         original_hook(panic_info);
     }));
@@ -99,19 +112,29 @@ fn main() -> io::Result<()> {
         minecraft::run(minecraft::MinecraftConfig { xorg_display: 1, username: "docker".to_string(), server_address: "".to_string() }, running_render, stdout, stdin, term_size_render);
     });
     
-    // // Start the rendering thread
-    // let render_rx_handle = thread::spawn(move || {
-    //     if let Err(e) = render::old_display_render_thread(render_rx, term_size_display, running_display) {
-    //         eprintln!("Render display error: {}", e);
-    //     }
-    // });
-    
-    // // Start the Minecraft rendering thread
-    // let render_handle = thread::spawn(move || {
-    //     if let Err(e) = render::render_minecraft_directly(render_tx, resize_rx, term_size_render, running_render) {
-    //         eprintln!("Render error: {}", e);
-    //     }
-    // });
+
+    // // need channels for:
+    // //  resize events
+    // //  cancellation
+    // //  shutting down
+
+
+    // crossterm::execute!(
+    //     output_channel,
+    //     event::EnableMouseCapture,
+    //     event::EnableFocusChange,
+    //     terminal::EnterAlternateScreen,
+    //     cursor::Hide
+    // );
+
+    // crossterm::execute!(
+    //     output_channel,
+    //     event::DisableMouseCapture,
+    //     event::DisableFocusChange,
+    //     terminal::LeaveAlternateScreen,
+    //     cursor::Show,
+    // );
+
     
     // Wait for a thread to finish (this indicates we should stop)
     let _ = input_handle.join();
@@ -128,7 +151,7 @@ fn main() -> io::Result<()> {
     let _ = input_rx_handle.join();
     // let _ = render_rx_handle.join();  // Commented out as this thread is not being started
     let _ = render_handle.join();
-    render::cleanup_terminal()?;
+    cleanup_terminal()?;
     
     Ok(())
 }
