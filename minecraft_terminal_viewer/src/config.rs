@@ -1,5 +1,5 @@
 
-use crossterm::event::{KeyEvent, MouseEvent};
+use termwiz::input::{KeyEvent, MouseEvent};
 
 // Game's native resolution
 pub const GAME_WIDTH: u16 = 640;

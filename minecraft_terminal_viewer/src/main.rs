@@ -76,9 +76,6 @@ fn main() -> io::Result<()> {
     // Shared running flag to signal threads to stop
     let running = Arc::new(AtomicBool::new(true));
     
-    // Channels for communication between threads
-    // let (render_tx, render_rx) = mpsc::channel();
-    
     // Clone Arc for each thread
     let run_minecraft = Arc::clone(&running);
     let terminal_size = Arc::clone(&term_size);
@@ -90,13 +87,6 @@ fn main() -> io::Result<()> {
         minecraft::run(minecraft::MinecraftConfig { xorg_display: 1, username: "docker".to_string(), server_address: "".to_string() }, run_minecraft, stdout, stdin, terminal_size);
     });
     
-
-    // // need channels for:
-    // //  resize events
-    // //  cancellation
-    // //  shutting down
-
-
     // crossterm::execute!(
     //     output_channel,
     //     event::EnableMouseCapture,

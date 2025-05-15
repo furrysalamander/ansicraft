@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 crossterm = "0.29.0"
 image = "0.24.8"
+termwiz = "0.23.3"
 
 [profile.release]
 opt-level = 3
