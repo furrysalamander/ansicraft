@@ -2,6 +2,7 @@
 mod config;
 mod render;
 mod xdo;
+mod minecraft;
 
 use config::TerminalSize;
 use config::InputEvent;
@@ -93,7 +94,7 @@ fn main() -> io::Result<()> {
     
     // Start the rendering thread
     let render_rx_handle = thread::spawn(move || {
-        if let Err(e) = render::display_render_thread(render_rx, term_size_display, running_display) {
+        if let Err(e) = render::old_display_render_thread(render_rx, term_size_display, running_display) {
             eprintln!("Render display error: {}", e);
         }
     });

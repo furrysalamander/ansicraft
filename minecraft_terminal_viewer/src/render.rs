@@ -174,7 +174,7 @@ fn render_byte_stream<R: Read>(
 }
 
 // Display the rendered frames
-pub fn display_render_thread(
+pub fn old_display_render_thread(
     render_rx: mpsc::Receiver<String>, 
     _term_size: Arc<Mutex<TerminalSize>>,
     running: Arc<AtomicBool>
