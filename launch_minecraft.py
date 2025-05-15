@@ -9,6 +9,10 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Minecraft Launcher Script')
     parser.add_argument('--download-only', action='store_true', 
                         help='Download Minecraft files only, then exit')
+    parser.add_argument('--server', '-s', 
+                        help='Server address to connect to on launch (e.g., example.com:25565)')
+    parser.add_argument('--username', '-u', default="docker",
+                        help='Username to use when launching Minecraft (default: docker)')
     return parser.parse_args()
 
 # Minecraft version to use
@@ -43,10 +47,22 @@ if args.download_only:
 # print("Starting Minecraft...")
 # Get the Minecraft command to launch the client
 options = {
-    "username": "docker",
+    "username": args.username,
     "uuid": "00000000-0000-0000-0000-000000000000",
     "token": ""
 }
+
+# If server specified, add server connection parameters
+if args.server:
+    # Check if port is included in server address
+    if ":" in args.server:
+        server_addr, port = args.server.split(":", 1)
+        options["server"] = server_addr
+        options["port"] = port
+    else:
+        # Use default port if not specified
+        options["server"] = args.server
+        options["port"] = "25565"  # Default Minecraft server port
 
 minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
     minecraft_version,

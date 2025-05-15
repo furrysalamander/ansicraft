@@ -96,7 +96,7 @@ fn main() -> io::Result<()> {
     let stdin = Arc::new(Mutex::new(std::io::stdin()));
     
     let render_handle = thread::spawn(move || {
-        minecraft::run(minecraft::MinecraftConfig { xorg_display: 8, username: "".to_string(), server_address: "".to_string() }, running_render, stdout, stdin, term_size_render);
+        minecraft::run(minecraft::MinecraftConfig { xorg_display: 1, username: "docker".to_string(), server_address: "".to_string() }, running_render, stdout, stdin, term_size_render);
     });
     
     // // Start the rendering thread

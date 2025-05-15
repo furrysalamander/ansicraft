@@ -18,9 +18,6 @@ pub struct MinecraftConfig {
     pub server_address: String,
 }
 
-struct MinecraftInstance {
-}
-
 fn display_render_thread<Writer: std::io::Write + Send + 'static>(
     completed_frames: mpsc::Receiver<String>, 
     output_channel: Arc<Mutex<Writer>>
@@ -49,7 +46,79 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
 
 // fn process_inputs() {}
 
-// fn run_minecraft() {}
+fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Result<()> {
+    use std::process::{Command, Stdio};
+    
+    // Set the DISPLAY environment variable based on xorg_display config
+    let display_env = format!(":{}", config.xorg_display);
+    
+    // Find the Python script location relative to the current executable
+    let launch_script = "/root/launch_minecraft.py";
+    
+    // Build command with proper arguments
+    let mut cmd = Command::new("python3");
+    cmd.arg(launch_script)
+        .arg("--username")
+        .arg(&config.username)
+        .env("DISPLAY", &display_env);
+    
+    // Add server address if specified and not empty
+    if !config.server_address.is_empty() {
+        cmd.arg("--server")
+           .arg(&config.server_address);
+    }
+    
+    // Redirect standard output and error
+    cmd.stdout(Stdio::piped())
+       .stderr(Stdio::piped());
+    
+    // Execute the command
+    println!("Launching Minecraft with username: {} on display: {}", 
+             config.username, display_env);
+    if !config.server_address.is_empty() {
+        println!("Connecting to server: {}", config.server_address);
+    }
+    
+    // Start the command but don't wait for it to complete
+    let child = cmd.spawn()?;
+    let pid = child.id();
+    
+    println!("Minecraft launched (PID: {})", pid);
+    
+    // Create a separate thread to manage the minecraft process
+    let minecraft_process_running = running.clone();
+    thread::spawn(move || {
+        let mut process = child;
+        
+        // Check if we should terminate the process
+        while minecraft_process_running.load(Ordering::SeqCst) {
+            // Check if process has exited on its own
+            match process.try_wait() {
+                Ok(Some(status)) => {
+                    println!("Minecraft process exited with status: {}", status);
+                    break;
+                }
+                Ok(None) => {
+                    // Process still running, sleep and check again
+                    thread::sleep(Duration::from_millis(500));
+                }
+                Err(e) => {
+                    eprintln!("Error checking Minecraft process status: {}", e);
+                    break;
+                }
+            }
+        }
+        
+        // If the loop ended because running became false, kill the process
+        if !minecraft_process_running.load(Ordering::SeqCst) {
+            println!("Terminating Minecraft process (PID: {})...", pid);
+            // Try to cleanly terminate
+            let _ = process.kill();
+        }
+    });
+    
+    Ok(())
+}
 
 // fn render_minecraft() {}
 
@@ -60,6 +129,9 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     input_channel: Arc<Mutex<Reader>>,
     terminal_size: Arc<Mutex<TerminalSize>>,
 ) -> io::Result<()> {
+    // First, launch Minecraft in the background
+    run_minecraft(config, running.clone())?;
+    
     let (completed_frames_tx, completed_frames_rx) = mpsc::channel();
 
     // tmp
@@ -68,6 +140,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
 
     let mut children = vec![];
 
+    // I should rename this to be "render xorg display to unicode"
     children.push(thread::spawn(move || {
         render::render_minecraft_directly(completed_frames_tx, resize_rx, terminal_size, running)
     }));

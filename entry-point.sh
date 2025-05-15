@@ -9,7 +9,7 @@ echo "nameserver 8.8.8.8" > /etc/resolv.conf
 Xorg "$DISPLAY" -noreset -logfile /tmp/xorg.log -config /etc/X11/xorg.conf.dummy &
 sleep 2
 
-python3 /root/launch_minecraft.py &
+# python3 /root/launch_minecraft.py &
 
 # Start terminal viewer
 /root/termcast
