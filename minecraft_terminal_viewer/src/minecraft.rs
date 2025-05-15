@@ -1,15 +1,13 @@
-use std::thread::JoinHandle;
 use std::{io, thread};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::render;
 use crate::config::TerminalSize;
-use crossterm::terminal::{BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate};
-use crossterm::{self, cursor, event, execute, queue, terminal};
+use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
+use crossterm::{self, queue};
 
 pub struct MinecraftConfig {
     pub xorg_display: u8,

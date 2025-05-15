@@ -7,10 +7,8 @@ use std::thread;
 use std::time::Duration;
 
 use crossterm::{
-    cursor,
-    event,
     execute,
-    terminal::{self, Clear, ClearType},
+    terminal::{Clear, ClearType},
 };
 
 use crate::config::{FFMPEG_BINARY, TerminalSize, GAME_HEIGHT, GAME_WIDTH};
