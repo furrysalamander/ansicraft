@@ -233,6 +233,7 @@ pub fn forward_input_to_minecraft(
                                 running.store(false, Ordering::SeqCst);
                                 break;
                             }
+                            run_xdotool(&["key", &c.to_string()])
                         }
 
                         'w' | 'a' | 's' | 'd' => {
