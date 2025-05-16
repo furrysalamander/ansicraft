@@ -12,6 +12,11 @@ use crossterm::{
 
 use crate::config::{FFMPEG_BINARY, TerminalSize, GAME_HEIGHT, GAME_WIDTH};
 
+pub fn get_height_from_width(width: usize) -> usize {
+    let target_height = ((width * 9 / 16 + 1) / 2) * 2;
+    return target_height;
+}
+
 // Renders the Minecraft X11 screen directly to the terminal with resize support
 pub fn render_x11_window(
     render_tx: mpsc::Sender<String>, 

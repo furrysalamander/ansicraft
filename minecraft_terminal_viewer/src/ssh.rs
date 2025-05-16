@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc};
 
 use crate::config::{self, TerminalSize};
 use crate::minecraft;
+use crate::render::get_height_from_width;
 use rand_core::OsRng;
 use ratatui::layout::Rect;
 use russh::keys::ssh_key::{self, PublicKey};
@@ -26,7 +28,7 @@ impl MinecraftInstance {
         let potato = Self {
             terminal_size: Arc::new(std::sync::Mutex::new(TerminalSize {
                 target_width: 20,
-                target_height: 20,
+                target_height: get_height_from_width(20),
             })),
             running: Arc::new(AtomicBool::new(true)),
             stdin_writer: stdin_writer
@@ -109,7 +111,7 @@ impl MinecraftClientServer {
 
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
         let clients = self.clients.clone();
-        tokio::spawn(async move {
+        // tokio::spawn(async move {
             // loop {
             //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
@@ -136,7 +138,7 @@ impl MinecraftClientServer {
             //             .unwrap();
             //     }
             // }
-        });
+        // });
 
         let config = Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
@@ -201,6 +203,11 @@ impl russh::server::Handler for MinecraftClientServer {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
+        let mut clients = self.clients.lock().await;
+        if let Some(instance) = clients.get_mut(&self.id) {
+            instance.stdin_writer.write(data)?;
+            // instance.running.store(false, Ordering::SeqCst);
+        }
         // match data {
         //     // Pressing 'q' closes the connection.
         //     b"q" => {
@@ -242,7 +249,7 @@ impl russh::server::Handler for MinecraftClientServer {
 
         let mut size = instance.terminal_size.lock().unwrap();
         size.target_width = col_width as usize;
-        size.target_height = row_height as usize;
+        size.target_height = get_height_from_width(col_width as usize);
 
         Ok(())
     }
@@ -274,8 +281,9 @@ impl russh::server::Handler for MinecraftClientServer {
         let instance = clients.get_mut(&self.id).unwrap();
         
         let mut size = instance.terminal_size.lock().unwrap();
+        
         size.target_width = col_width as usize;
-        size.target_height = row_height as usize;
+        size.target_height = get_height_from_width(col_width as usize);
 
         session.channel_success(channel)?;
 
@@ -289,10 +297,9 @@ impl Drop for MinecraftClientServer {
         let clients = self.clients.clone();
         tokio::spawn(async move {
             let mut clients = clients.lock().await;
-            let instance = clients.get_mut(&id).unwrap();
-            
-            instance.running.store(false, Ordering::SeqCst);
-
+            if let Some(instance) = clients.get_mut(&id) {
+                instance.running.store(false, Ordering::SeqCst);
+            }
             clients.remove(&id);
         });
     }

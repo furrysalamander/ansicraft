@@ -12,4 +12,4 @@ sleep 2
 # python3 /root/launch_minecraft.py &
 
 # Start terminal viewer
-/root/termcast
+RUST_BACKTRACE=full /root/termcast

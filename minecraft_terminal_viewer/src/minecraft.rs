@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::{render, xdo};
 use crate::config::TerminalSize;
-use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
-use crossterm::{self, queue};
+use crossterm::terminal::{self, BeginSynchronizedUpdate, Clear, EndSynchronizedUpdate};
+use crossterm::{self, cursor, event, queue};
 
 pub struct MinecraftConfig {
     pub xorg_display: u8,
@@ -21,14 +21,27 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
     completed_frames: mpsc::Receiver<String>, 
     output_channel: Arc<Mutex<Writer>>
 ) -> io::Result<()> {
+    let mut writer = output_channel.lock().expect("Failed to lock mutex");
+
+    // To be clear, I really don't think these (or the cleanup commands) belong here... 
+    // but I'm not quite proficient enough with rust's borrow checker to understand
+    // how to put them higher up.  Maybe later.
+    crossterm::execute!(
+    writer,
+    event::EnableMouseCapture,
+    event::EnableFocusChange,
+    terminal::EnterAlternateScreen,
+    cursor::Hide
+    )?;
+
     loop {
         match completed_frames.recv_timeout(Duration::from_millis(1)) {
             Ok(frame) => {
-                let mut writer = output_channel.lock().expect("Failed to lock mutex");
                 
                 queue!(writer, BeginSynchronizedUpdate)?;
                 // I wonder if we want to add a clear here.
                 writer.write(frame.as_bytes())?;
+                queue!(writer, Clear(crossterm::terminal::ClearType::FromCursorDown))?;
                 queue!(writer, EndSynchronizedUpdate)?;
                 writer.flush()?;
             }
@@ -40,6 +53,15 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
             }
         }
     }
+    
+    crossterm::execute!(
+    writer,
+    event::DisableMouseCapture,
+    event::DisableFocusChange,
+    terminal::LeaveAlternateScreen,
+    cursor::Show,
+    )?;
+
     Ok(())
 }
 
@@ -126,7 +148,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
 ) -> io::Result<()> {
     // First, launch Minecraft in the background
     run_minecraft(config, running.clone())?;
-    
+
     let (completed_frames_tx, completed_frames_rx) = mpsc::channel();
     let (input_event_tx, input_event_rx) = mpsc::channel();
 
@@ -156,7 +178,6 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
         // Wait for the thread to finish. Returns a result.
         let _ = child.join();
     }
-
 
     Ok(())
 }
