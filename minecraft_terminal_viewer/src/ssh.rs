@@ -25,8 +25,8 @@ impl MinecraftInstance {
 
         let potato = Self {
             terminal_size: Arc::new(std::sync::Mutex::new(TerminalSize {
-                target_width: 1,
-                target_height: 1,
+                target_width: 20,
+                target_height: 20,
             })),
             running: Arc::new(AtomicBool::new(true)),
             stdin_writer: stdin_writer
@@ -36,7 +36,14 @@ impl MinecraftInstance {
 
         let output_channel = Arc::new(std::sync::Mutex::new(writer));
         let input_channel = Arc::new(std::sync::Mutex::new(stdin_reader));
-        minecraft::run(config, Arc::clone(&potato.running), output_channel, input_channel, Arc::clone(&potato.terminal_size));
+        
+        let running_clone = Arc::clone(&potato.running);
+        let terminal_size_clone = Arc::clone(&potato.terminal_size);
+        
+        tokio::spawn(async move {
+            minecraft::run(config, running_clone, output_channel, input_channel, terminal_size_clone);
+        });
+        
         potato
     }
 }

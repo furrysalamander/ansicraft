@@ -35,7 +35,7 @@ pub fn cleanup_terminal() -> io::Result<()> {
 
 // Main function with error handling
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() {
     let mut server = ssh::MinecraftClientServer::new();
     server.run().await.expect("Failed running server");
 
