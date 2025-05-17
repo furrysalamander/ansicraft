@@ -4,17 +4,21 @@ set -e
 
 # Directory to store minecraft data
 MINECRAFT_DATA_DIR="$(pwd)/minecraft_data"
+MINECRAFT_SERVER_DATA_DIR="$(pwd)/minecraft_server_data"
 
-# Create minecraft data directory if it doesn't exist
-mkdir -p "$MINECRAFT_DATA_DIR"
+# Create minecraft data directories if they don't exist
+mkdir -p "$MINECRAFT_DATA_DIR" "$MINECRAFT_SERVER_DATA_DIR"
 
-# echo "Building Docker container..."
-docker build -t furrysalamander/minecraft-terminal .
+# Optional server address parameter
+# If provided, use it as the server address instead of the container name
+if [ $# -gt 0 ]; then
+  export MINECRAFT_SERVER_ADDRESS="$1"
+  echo "Using custom Minecraft server address: $MINECRAFT_SERVER_ADDRESS"
+else
+  echo "Using default Minecraft server address (container name)"
+fi
 
-# echo "Running Docker container..."
-docker run -it --rm \
-  -p 9867:2222 \
-  -v "$MINECRAFT_DATA_DIR:/root/.minecraft" \
-  furrysalamander/minecraft-terminal
+echo "Building and starting Docker containers..."
+docker compose up --build
 
-echo "Container exited."
+echo "Containers exited."

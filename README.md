@@ -2,19 +2,19 @@
 ###### Yes, this really is as dumb as it sounds.
 
 ## How to get started
-* Build the container using `make`
-* Run the container (`docker run --rm furrysalamander/minecraft-rtsp`)
-* Find out the container's IP address
+* Run the provided `launch.sh` script to start both Minecraft client and server containers:
     ```bash
-    $ docker ps
-    CONTAINER ID   IMAGE                            COMMAND                  CREATED          STATUS          PORTS     NAMES
-    243427b67ec0   furrysalamander/minecraft-rtsp   "/bin/sh -c /root/en…"   6 minutes ago    Up 6 minutes              dazzling_shannon
-    $ docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' dazzling_shannon
+    $ ./launch.sh
     ```
-* Connect to the container's RTSP stream
+* Alternatively, specify a custom Minecraft server address:
     ```bash
-    $ ffplay -rtsp_transport tcp rtsp://172.17.0.3:8554/minecraftStream
+    $ ./launch.sh my-minecraft-server.example.com
     ```
+* Connect to the Minecraft terminal via SSH on port 9867:
+    ```bash
+    $ ssh -p 9867 localhost
+    ```
+* Play Minecraft directly in your terminal window!
 * Question your decisions in life that brought you to this moment.
 
 ## Screenshot

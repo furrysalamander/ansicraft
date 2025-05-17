@@ -44,7 +44,7 @@ def parse_arguments():
     return parser.parse_args()
 
 # Minecraft version to use
-minecraft_version = "1.21.5"
+minecraft_version = "1.21.4"
 # Directory for minecraft
 minecraft_directory = "/root/.minecraft"
 
@@ -92,11 +92,19 @@ if args.server:
         options["server"] = args.server
         options["port"] = "25565"  # Default Minecraft server port
 
+print(options)
 minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
     minecraft_version,
     minecraft_directory,
     options
 )
+print(minecraft_command)
+if args.server:
+    minecraft_command.append("--server")
+    minecraft_command.append(options["server"])
+    minecraft_command.append("--port")
+    minecraft_command.append("25565")
+print(minecraft_command)
 
 # Register signal handlers for SIGINT and SIGTERM
 signal.signal(signal.SIGINT, signal_handler)

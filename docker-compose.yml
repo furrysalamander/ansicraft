@@ -1,0 +1,36 @@
+version: '3'
+
+services:
+  minecraft-client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: minecraft-terminal
+    ports:
+      - "9867:2222"  # SSH port for connecting to the Minecraft terminal viewer
+    volumes:
+      - ./minecraft_data:/root/.minecraft
+    environment:
+      - MINECRAFT_SERVER_ADDRESS=172.17.0.1 #${MINECRAFT_SERVER_ADDRESS:-minecraft-server}
+    depends_on:
+      - minecraft-server
+
+  minecraft-server:
+    image: itzg/minecraft-server
+    container_name: minecraft-server
+    ports:
+      - "25565:25565"  # Minecraft server port
+    environment:
+      - EULA=TRUE
+      - TYPE=PAPER
+      - MEMORY=2G
+      - DIFFICULTY=normal
+      - OVERRIDE_SERVER_PROPERTIES=true
+      - ENABLE_WHITELIST=false
+      - ONLINE_MODE=false
+      - ALLOW_NETHER=true
+    volumes:
+      - ./minecraft_server_data:/data
+    tty: true
+    stdin_open: true
+    restart: unless-stopped

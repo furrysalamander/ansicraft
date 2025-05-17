@@ -71,10 +71,13 @@ impl MinecraftInstance {
             display: display.clone(),
         };
 
+        // Get Minecraft server address from environment variable if set
+        let server_address = std::env::var("MINECRAFT_SERVER_ADDRESS").unwrap_or_else(|_| "".to_string());
+        
         let config = minecraft::MinecraftConfig {
             xorg_display: display.clone(),
             username: format!("docker{}", display).to_owned(),
-            server_address: "".to_owned(),
+            server_address,
         };
 
         let output_channel = Arc::new(std::sync::Mutex::new(writer));
