@@ -21,6 +21,7 @@ pub fn get_height_from_width(width: usize) -> usize {
 pub fn render_x11_window(
     render_tx: mpsc::Sender<String>, 
     term_size: Arc<Mutex<TerminalSize>>,
+    display: String,
     running: Arc<AtomicBool>
 ) -> io::Result<()> {
     let mut current_process: Option<std::process::Child> = None;
@@ -54,7 +55,7 @@ pub fn render_x11_window(
             let x11_grab_args = [
                 "-f", "x11grab",
                 "-video_size", &format!("{}x{}", GAME_WIDTH, GAME_HEIGHT),
-                "-i", ":1",
+                "-i", &display,
                 "-f", "rawvideo",
                 "-vf", &format!("scale={}x{},setsar=1:1", target_width, target_height),
                 "-pix_fmt", "rgb24",

@@ -147,10 +147,9 @@ impl MinecraftClientServer {
     }
 
     async fn get_next_available_display(&self) -> String {
-        // For example, support :1.0 to :10.0
         let mut displays = self.displays_in_use.lock().await;
-        for i in 1..=10 {
-            let display = format!(":{}.0", i);
+        for i in 0..=9 {
+            let display = format!(":1.{}", i);
             if !displays.contains(&display) {
                 displays.insert(display.clone());
                 return display;
