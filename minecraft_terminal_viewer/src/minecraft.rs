@@ -129,19 +129,55 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
                 }
             }
         }
+
+        // Ensure the running flag is set to false when shutting down
+        if minecraft_process_running.load(Ordering::SeqCst) {
+            minecraft_process_running.store(false, Ordering::SeqCst);
+        }
+        
         println!("Shutting down minecraft.");
 
-        // Send SIGTERM to child process.
-        signal::kill(Pid::from_raw(process.id() as i32), Signal::SIGTERM).unwrap();
-        thread::sleep(Duration::from_secs(1));
-
-        // If the loop ended because running became false, kill the process
-        if !minecraft_process_running.load(Ordering::SeqCst) {
-            println!("Terminating Minecraft process (PID: {})...", pid);
-            // Try to cleanly terminate
-            match process.kill() {
-                Ok(_) => println!("Successfully terminated Minecraft process."),
-                Err(e) => eprintln!("Failed to terminate Minecraft process: {}", e),
+        // Check if process is still running before sending signals
+        match process.try_wait() {
+            Ok(Some(status)) => {
+                println!("Minecraft process already exited with status: {}", status);
+            },
+            Ok(None) => {
+                // Process is still running, try SIGTERM first
+                println!("Sending SIGTERM to Minecraft process (PID: {})...", pid);
+                if let Err(e) = signal::kill(Pid::from_raw(process.id() as i32), Signal::SIGTERM) {
+                    println!("Could not send SIGTERM to process: {}", e);
+                } else {
+                    // Wait for up to 5 seconds for the process to exit gracefully
+                    let mut terminated = false;
+                    for _ in 0..10 {
+                        thread::sleep(Duration::from_millis(500));
+                        match process.try_wait() {
+                            Ok(Some(status)) => {
+                                println!("Minecraft process exited gracefully with status: {}", status);
+                                terminated = true;
+                                break;
+                            },
+                            Ok(None) => continue, // Still running
+                            Err(e) => {
+                                eprintln!("Error checking process status: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // If process is still alive, force kill it
+                    if !terminated {
+                        println!("Process didn't exit after SIGTERM, attempting to kill...");
+                        match process.kill() {
+                            Ok(_) => println!("Successfully terminated Minecraft process."),
+                            Err(e) => eprintln!("Failed to terminate Minecraft process: {}", e),
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                eprintln!("Error checking Minecraft process status: {}", e);
             }
         }
     });
