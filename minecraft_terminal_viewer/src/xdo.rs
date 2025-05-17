@@ -53,6 +53,7 @@ pub fn forward_input_to_minecraft(
     term_size: Arc<Mutex<TerminalSize>>,
     running: Arc<AtomicBool>,
     display: String,
+    absolute_mouse_mode_default: bool,
 ) -> io::Result<()> {
     let run_xdotool = |args: &[&str]| {
         Command::new("xdotool")
@@ -119,7 +120,7 @@ pub fn forward_input_to_minecraft(
         },
     );
 
-    let mut inventory_open = true;
+    let mut inventory_open = absolute_mouse_mode_default;
     let mut last_mouse_x = 0u16;
     let mut last_mouse_y = 0u16;
 

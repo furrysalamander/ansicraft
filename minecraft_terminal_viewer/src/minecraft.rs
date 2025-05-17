@@ -233,6 +233,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
             terminal_size_forward,
             running_forward,
             display_for_forward,
+            config.server_address == ""
         )
     }));
 
