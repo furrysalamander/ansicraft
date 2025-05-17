@@ -72,8 +72,8 @@ impl MinecraftInstance {
         };
 
         let config = minecraft::MinecraftConfig {
-            xorg_display: display,
-            username: "docker".to_owned(),
+            xorg_display: display.clone(),
+            username: format!("docker{}", display).to_owned(),
             server_address: "".to_owned(),
         };
 
