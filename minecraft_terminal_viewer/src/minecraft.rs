@@ -8,6 +8,8 @@ use crate::{render, xdo};
 use crate::config::TerminalSize;
 use crossterm::terminal::{self, BeginSynchronizedUpdate, Clear, EndSynchronizedUpdate};
 use crossterm::{self, cursor, event, queue};
+use nix::unistd::Pid;
+use nix::sys::signal::{self, Signal};
 
 pub struct MinecraftConfig {
     pub xorg_display: u8,
@@ -88,8 +90,8 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
     }
     
     // Redirect standard output and error
-    cmd.stdout(Stdio::piped())
-       .stderr(Stdio::piped());
+    // cmd.stdout(Stdio::piped())
+    //    .stderr(Stdio::piped());
     
     // Execute the command
     println!("Launching Minecraft with username: {} on display: {}", 
@@ -127,12 +129,20 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
                 }
             }
         }
-        
+        println!("Shutting down minecraft.");
+
+        // Send SIGTERM to child process.
+        signal::kill(Pid::from_raw(process.id() as i32), Signal::SIGTERM).unwrap();
+        thread::sleep(Duration::from_secs(1));
+
         // If the loop ended because running became false, kill the process
         if !minecraft_process_running.load(Ordering::SeqCst) {
             println!("Terminating Minecraft process (PID: {})...", pid);
             // Try to cleanly terminate
-            let _ = process.kill();
+            match process.kill() {
+                Ok(_) => println!("Successfully terminated Minecraft process."),
+                Err(e) => eprintln!("Failed to terminate Minecraft process: {}", e),
+            }
         }
     });
     

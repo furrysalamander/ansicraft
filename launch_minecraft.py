@@ -4,6 +4,34 @@ import sys
 import os
 import argparse
 import tempfile
+import signal
+import atexit
+
+# Global variable to track the subprocess
+minecraft_process = None
+
+def signal_handler(sig, frame):
+    """Handle signals by terminating the Minecraft subprocess"""
+    if minecraft_process:
+        print(f"\nReceived signal {sig}, terminating Minecraft...")
+        minecraft_process.terminate()
+        try:
+            # Wait up to 3 seconds for process to terminate
+            minecraft_process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            # If it doesn't terminate gracefully, force kill it
+            print("Minecraft not responding to terminate signal, force killing...")
+            minecraft_process.kill()
+    sys.exit(0)
+
+def cleanup_at_exit():
+    """Ensure Minecraft is terminated when script exits"""
+    if minecraft_process and minecraft_process.poll() is None:
+        minecraft_process.terminate()
+        try:
+            minecraft_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            minecraft_process.kill()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Minecraft Launcher Script')
@@ -70,13 +98,19 @@ minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
     options
 )
 
+# Register signal handlers for SIGINT and SIGTERM
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+# Register exit handler
+atexit.register(cleanup_at_exit)
+
 # Create temporary files to capture stdout and stderr
 with tempfile.TemporaryFile(mode="w+") as stdout_file, tempfile.TemporaryFile(mode="w+") as stderr_file:
     # Launch Minecraft with stdout and stderr redirected to temp files
-    process = subprocess.Popen(minecraft_command, stdout=stdout_file, stderr=stderr_file)
+    minecraft_process = subprocess.Popen(minecraft_command, stdout=stdout_file, stderr=stderr_file)
     
     # Wait for the process to finish
-    return_code = process.wait()
+    return_code = minecraft_process.wait()
     
     # If the process crashed (non-zero exit code), print stdout and stderr
     if return_code != 0:

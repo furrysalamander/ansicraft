@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc};
 
@@ -13,7 +14,38 @@ use russh::server::*;
 use russh::{Channel, ChannelId, Pty};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Mutex;
-use tokio::time::interval_at;
+
+// Function to load or create SSH key
+fn load_or_create_ssh_key() -> russh::keys::PrivateKey {
+    // Honestly, maybe errors in this function should result in a panic.
+    let key_path = Path::new("ssh_server_key");
+    
+    // Try to load existing key
+    if key_path.exists() {
+        match russh::keys::load_secret_key(key_path, None) {
+            Ok(key) => {
+                println!("Loaded existing SSH key");
+                return key
+            },
+            Err(e) => {
+                eprintln!("Error loading SSH key: {:?}, generating new one", e);
+            }
+        }
+    }
+    // Generate and save new key if loading failed
+    let key = russh::keys::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap();
+
+    match key.write_openssh_file(key_path, ssh_key::LineEnding::LF) {
+        Ok(()) => {
+            println!("Generated new SSH key");
+        },
+        Err(e) => {
+            eprintln!("Error saving SSH key: {:?}", e);
+        }
+    }
+    return key;
+}
+
 
 struct MinecraftInstance {
     terminal_size: Arc<std::sync::Mutex<config::TerminalSize>>,
@@ -145,7 +177,7 @@ impl MinecraftClientServer {
             auth_rejection_time: std::time::Duration::from_secs(3),
             auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
             keys: vec![
-                russh::keys::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap(),
+                load_or_create_ssh_key(),
             ],
             nodelay: true,
             ..Default::default()

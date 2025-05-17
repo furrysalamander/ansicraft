@@ -13,6 +13,7 @@ docker build -t furrysalamander/minecraft-terminal .
 
 # echo "Running Docker container..."
 docker run -it --rm \
+  -p 9867:2222 \
   -v "$MINECRAFT_DATA_DIR:/root/.minecraft" \
   furrysalamander/minecraft-terminal
 
