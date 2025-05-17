@@ -11,10 +11,10 @@ use crossterm::{self, cursor, event, queue};
 use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
 
+#[derive(Clone)]
 pub struct MinecraftConfig {
-    pub xorg_display: u8,
+    pub xorg_display: String,
     pub username: String,
-
     pub server_address: String,
 }
 
@@ -70,8 +70,8 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
 fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Result<()> {
     use std::process::{Command, Stdio};
     
-    // Set the DISPLAY environment variable based on xorg_display config
-    let display_env = format!(":{}", config.xorg_display);
+    // Set the DISPLAY environment variable based on config.xorg_display
+    let display_env = config.xorg_display.clone();
     
     // Find the Python script location relative to the current executable
     let launch_script = "/root/launch_minecraft.py";
@@ -193,7 +193,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     terminal_size: Arc<Mutex<TerminalSize>>,
 ) -> io::Result<()> {
     // First, launch Minecraft in the background
-    run_minecraft(config, running.clone())?;
+    run_minecraft(config.clone(), running.clone())?;
 
     let (completed_frames_tx, completed_frames_rx) = mpsc::channel();
     let (input_event_tx, input_event_rx) = mpsc::channel();
@@ -206,6 +206,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     let running_forward = Arc::clone(&running);
     let terminal_size_render = Arc::clone(&terminal_size);
     let terminal_size_forward = Arc::clone(&terminal_size);
+    let display_for_forward = config.xorg_display.clone();
 
     children.push(thread::spawn(move || {
         render::render_x11_window(completed_frames_tx, terminal_size_render, running_render)
@@ -217,7 +218,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
         xdo::capture_input(input_channel, input_event_tx, running_input)
     }));
     children.push(thread::spawn(move || {
-        xdo::forward_input_to_minecraft(input_event_rx, terminal_size_forward, running_forward)
+        xdo::forward_input_to_minecraft(input_event_rx, terminal_size_forward, running_forward, display_for_forward)
     }));
 
     for child in children {

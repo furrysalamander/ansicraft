@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -51,10 +52,11 @@ struct MinecraftInstance {
     terminal_size: Arc<std::sync::Mutex<config::TerminalSize>>,
     running: Arc<AtomicBool>,
     stdin_writer: pipe::PipeWriter,
+    display: String, // Store the display string for cleanup
 }
 
 impl MinecraftInstance {
-    pub fn new<W: std::io::Write + Send + 'static>(writer: W) -> MinecraftInstance {
+    pub fn new<W: std::io::Write + Send + 'static>(writer: W, display: String) -> MinecraftInstance {
         let (stdin_reader, stdin_writer) = pipe::pipe();
 
         let potato = Self {
@@ -63,10 +65,11 @@ impl MinecraftInstance {
                 target_height: get_height_from_width(20),
             })),
             running: Arc::new(AtomicBool::new(true)),
-            stdin_writer: stdin_writer
+            stdin_writer: stdin_writer,
+            display: display.clone(),
         };
 
-        let config = minecraft::MinecraftConfig{ xorg_display: 1, username: "docker".to_owned(), server_address: "".to_owned() };
+        let config = minecraft::MinecraftConfig{ xorg_display: display, username: "docker".to_owned(), server_address: "".to_owned() };
 
         let output_channel = Arc::new(std::sync::Mutex::new(writer));
         let input_channel = Arc::new(std::sync::Mutex::new(stdin_reader));
@@ -75,7 +78,7 @@ impl MinecraftInstance {
         let terminal_size_clone = Arc::clone(&potato.terminal_size);
         
         tokio::spawn(async move {
-            minecraft::run(config, running_clone, output_channel, input_channel, terminal_size_clone);
+            let _ = minecraft::run(config, running_clone, output_channel, input_channel, terminal_size_clone);
         });
         
         potato
@@ -131,6 +134,7 @@ impl std::io::Write for TerminalHandle {
 pub struct MinecraftClientServer {
     clients: Arc<Mutex<HashMap<usize, MinecraftInstance>>>,
     id: usize,
+    displays_in_use: Arc<Mutex<HashSet<String>>>, // Track displays in use
 }
 
 impl MinecraftClientServer {
@@ -138,11 +142,27 @@ impl MinecraftClientServer {
         Self {
             clients: Arc::new(Mutex::new(HashMap::new())),
             id: 0,
+            displays_in_use: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
+    async fn get_next_available_display(&self) -> String {
+        // For example, support :1.0 to :10.0
+        let mut displays = self.displays_in_use.lock().await;
+        for i in 1..=10 {
+            let display = format!(":{}.0", i);
+            if !displays.contains(&display) {
+                displays.insert(display.clone());
+                return display;
+            }
+        }
+        // Fallback: if all are in use, just use :1.0 (could also error)
+        ":1.0".to_string()
+    }
+
+
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
-        let clients = self.clients.clone();
+        // let clients = self.clients.clone();
         // tokio::spawn(async move {
             // loop {
             //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
@@ -216,8 +236,9 @@ impl russh::server::Handler for MinecraftClientServer {
         // };
 
         // let terminal = ratatui::Terminal::with_options(backend, options)?;
+        let display = self.get_next_available_display().await;
 
-        let app = MinecraftInstance::new(terminal_handle);
+        let app = MinecraftInstance::new(terminal_handle, display.clone());
 
         let mut clients = self.clients.lock().await;
         clients.insert(self.id, app);
@@ -238,24 +259,7 @@ impl russh::server::Handler for MinecraftClientServer {
         let mut clients = self.clients.lock().await;
         if let Some(instance) = clients.get_mut(&self.id) {
             instance.stdin_writer.write(data)?;
-            // instance.running.store(false, Ordering::SeqCst);
         }
-        // match data {
-        //     // Pressing 'q' closes the connection.
-        //     b"q" => {
-        //         self.clients.lock().await.remove(&self.id);
-        //         session.close(channel)?;
-        //     }
-        //     // Pressing 'c' resets the counter for the app.
-        //     // Only the client with the id sees the counter reset.
-        //     b"c" => {
-        //         let mut clients = self.clients.lock().await;
-        //         let app = clients.get_mut(&self.id).unwrap();
-        //         app.counter = 0;
-        //     }
-        //     _ => {}
-        // }
-
         Ok(())
     }
 
@@ -269,12 +273,12 @@ impl russh::server::Handler for MinecraftClientServer {
         _: u32,
         _: &mut Session,
     ) -> Result<(), Self::Error> {
-        let rect = Rect {
-            x: 0,
-            y: 0,
-            width: col_width as u16,
-            height: row_height as u16,
-        };
+        // let rect = Rect {
+        //     x: 0,
+        //     y: 0,
+        //     width: col_width as u16,
+        //     height: row_height as u16,
+        // };
 
         let mut clients = self.clients.lock().await;
         let instance = clients.get_mut(&self.id).unwrap();
@@ -286,11 +290,6 @@ impl russh::server::Handler for MinecraftClientServer {
         Ok(())
     }
 
-    /// The client requests a pseudo-terminal with the given
-    /// specifications.
-    ///
-    /// **Note:** Success or failure should be communicated to the client by calling
-    /// `session.channel_success(channel)` or `session.channel_failure(channel)` respectively.
     async fn pty_request(
         &mut self,
         channel: ChannelId,
@@ -302,12 +301,12 @@ impl russh::server::Handler for MinecraftClientServer {
         _: &[(Pty, u32)],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        let rect = Rect {
-            x: 0,
-            y: 0,
-            width: col_width as u16,
-            height: row_height as u16,
-        };
+        // let rect = Rect {
+        //     x: 0,
+        //     y: 0,
+        //     width: col_width as u16,
+        //     height: row_height as u16,
+        // };
 
         let mut clients = self.clients.lock().await;
         let instance = clients.get_mut(&self.id).unwrap();
@@ -327,18 +326,17 @@ impl Drop for MinecraftClientServer {
     fn drop(&mut self) {
         let id = self.id;
         let clients = self.clients.clone();
+        let displays_in_use = self.displays_in_use.clone();
         tokio::spawn(async move {
             let mut clients = clients.lock().await;
             if let Some(instance) = clients.get_mut(&id) {
                 instance.running.store(false, Ordering::SeqCst);
             }
-            clients.remove(&id);
+            if let Some(instance) = clients.remove(&id) {
+                // Release the display when the client disconnects
+                let display = instance.display;
+                displays_in_use.lock().await.remove(&display);
+            }
         });
     }
-}
-
-#[tokio::main]
-async fn main() {
-    let mut server = MinecraftClientServer::new();
-    server.run().await.expect("Failed running server");
 }

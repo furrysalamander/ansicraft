@@ -48,17 +48,18 @@ pub fn forward_input_to_minecraft(
     input_rx: mpsc::Receiver<InputEvent>,
     term_size: Arc<Mutex<TerminalSize>>,
     running: Arc<AtomicBool>,
+    display: String,
 ) -> io::Result<()> {
-    fn run_xdotool(args: &[&str]) {
+    let run_xdotool = |args: &[&str]| {
         Command::new("xdotool")
             .args(args)
-            .env("DISPLAY", ":1")
+            .env("DISPLAY", &display)
             .status()
             .unwrap_or_else(|e| {
                 eprintln!("Error running xdotool: {}", e);
                 std::process::ExitStatus::from_raw(1)
             });
-    }
+    };
 
     fn scale_mouse_coords(x: u16, y: u16, term_size: &TerminalSize) -> (u16, u16) {
         let scaled_x = (x as f32 / term_size.target_width as f32 * GAME_WIDTH as f32) as u16;
