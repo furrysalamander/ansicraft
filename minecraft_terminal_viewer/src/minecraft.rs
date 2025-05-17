@@ -1,15 +1,15 @@
-use std::{io, thread};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{io, thread};
 
-use crate::{render, xdo};
 use crate::config::TerminalSize;
+use crate::{render, xdo};
 use crossterm::terminal::{self, BeginSynchronizedUpdate, Clear, EndSynchronizedUpdate};
 use crossterm::{self, cursor, event, queue};
-use nix::unistd::Pid;
 use nix::sys::signal::{self, Signal};
+use nix::unistd::Pid;
 
 #[derive(Clone)]
 pub struct MinecraftConfig {
@@ -20,30 +20,32 @@ pub struct MinecraftConfig {
 
 // TODO: Maybe I should put this in the render crate...?
 fn display_render_thread<Writer: std::io::Write + Send + 'static>(
-    completed_frames: mpsc::Receiver<String>, 
-    output_channel: Arc<Mutex<Writer>>
+    completed_frames: mpsc::Receiver<String>,
+    output_channel: Arc<Mutex<Writer>>,
 ) -> io::Result<()> {
     let mut writer = output_channel.lock().expect("Failed to lock mutex");
 
-    // To be clear, I really don't think these (or the cleanup commands) belong here... 
+    // To be clear, I really don't think these (or the cleanup commands) belong here...
     // but I'm not quite proficient enough with rust's borrow checker to understand
     // how to put them higher up.  Maybe later.
     crossterm::execute!(
-    writer,
-    event::EnableMouseCapture,
-    event::EnableFocusChange,
-    terminal::EnterAlternateScreen,
-    cursor::Hide
+        writer,
+        event::EnableMouseCapture,
+        event::EnableFocusChange,
+        terminal::EnterAlternateScreen,
+        cursor::Hide
     )?;
 
     loop {
         match completed_frames.recv_timeout(Duration::from_millis(1)) {
             Ok(frame) => {
-                
                 queue!(writer, BeginSynchronizedUpdate)?;
                 // I wonder if we want to add a clear here.
                 writer.write(frame.as_bytes())?;
-                queue!(writer, Clear(crossterm::terminal::ClearType::FromCursorDown))?;
+                queue!(
+                    writer,
+                    Clear(crossterm::terminal::ClearType::FromCursorDown)
+                )?;
                 queue!(writer, EndSynchronizedUpdate)?;
                 writer.flush()?;
             }
@@ -55,13 +57,13 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
             }
         }
     }
-    
+
     crossterm::execute!(
-    writer,
-    event::DisableMouseCapture,
-    event::DisableFocusChange,
-    terminal::LeaveAlternateScreen,
-    cursor::Show,
+        writer,
+        event::DisableMouseCapture,
+        event::DisableFocusChange,
+        terminal::LeaveAlternateScreen,
+        cursor::Show,
     )?;
 
     Ok(())
@@ -69,48 +71,49 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
 
 fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Result<()> {
     use std::process::{Command, Stdio};
-    
+
     // Set the DISPLAY environment variable based on config.xorg_display
     let display_env = config.xorg_display.clone();
-    
+
     // Find the Python script location relative to the current executable
     let launch_script = "/root/launch_minecraft.py";
-    
+
     // Build command with proper arguments
     let mut cmd = Command::new("python3");
     cmd.arg(launch_script)
         .arg("--username")
         .arg(&config.username)
         .env("DISPLAY", &display_env);
-    
+
     // Add server address if specified and not empty
     if !config.server_address.is_empty() {
-        cmd.arg("--server")
-           .arg(&config.server_address);
+        cmd.arg("--server").arg(&config.server_address);
     }
-    
+
     // Redirect standard output and error
     // cmd.stdout(Stdio::piped())
     //    .stderr(Stdio::piped());
-    
+
     // Execute the command
-    println!("Launching Minecraft with username: {} on display: {}", 
-             config.username, display_env);
+    println!(
+        "Launching Minecraft with username: {} on display: {}",
+        config.username, display_env
+    );
     if !config.server_address.is_empty() {
         println!("Connecting to server: {}", config.server_address);
     }
-    
+
     // Start the command but don't wait for it to complete
     let child = cmd.spawn()?;
     let pid = child.id();
-    
+
     println!("Minecraft launched (PID: {})", pid);
-    
+
     // Create a separate thread to manage the minecraft process
     let minecraft_process_running = running.clone();
     thread::spawn(move || {
         let mut process = child;
-        
+
         // Check if we should terminate the process
         while minecraft_process_running.load(Ordering::SeqCst) {
             // Check if process has exited on its own
@@ -134,14 +137,14 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
         if minecraft_process_running.load(Ordering::SeqCst) {
             minecraft_process_running.store(false, Ordering::SeqCst);
         }
-        
+
         println!("Shutting down minecraft.");
 
         // Check if process is still running before sending signals
         match process.try_wait() {
             Ok(Some(status)) => {
                 println!("Minecraft process already exited with status: {}", status);
-            },
+            }
             Ok(None) => {
                 // Process is still running, try SIGTERM first
                 println!("Sending SIGTERM to Minecraft process (PID: {})...", pid);
@@ -154,10 +157,13 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
                         thread::sleep(Duration::from_millis(500));
                         match process.try_wait() {
                             Ok(Some(status)) => {
-                                println!("Minecraft process exited gracefully with status: {}", status);
+                                println!(
+                                    "Minecraft process exited gracefully with status: {}",
+                                    status
+                                );
                                 terminated = true;
                                 break;
-                            },
+                            }
                             Ok(None) => continue, // Still running
                             Err(e) => {
                                 eprintln!("Error checking process status: {}", e);
@@ -165,7 +171,7 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
                             }
                         }
                     }
-                    
+
                     // If process is still alive, force kill it
                     if !terminated {
                         println!("Process didn't exit after SIGTERM, attempting to kill...");
@@ -175,13 +181,13 @@ fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Resul
                         }
                     }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("Error checking Minecraft process status: {}", e);
             }
         }
     });
-    
+
     Ok(())
 }
 
@@ -210,7 +216,12 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     let display_for_ffmpeg = config.xorg_display.clone();
 
     children.push(thread::spawn(move || {
-        render::render_x11_window(completed_frames_tx, terminal_size_render, display_for_ffmpeg, running_render)
+        render::render_x11_window(
+            completed_frames_tx,
+            terminal_size_render,
+            display_for_ffmpeg,
+            running_render,
+        )
     }));
     children.push(thread::spawn(move || {
         display_render_thread(completed_frames_rx, output_channel)
@@ -219,7 +230,12 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
         xdo::capture_input(input_channel, input_event_tx, running_input)
     }));
     children.push(thread::spawn(move || {
-        xdo::forward_input_to_minecraft(input_event_rx, terminal_size_forward, running_forward, display_for_forward)
+        xdo::forward_input_to_minecraft(
+            input_event_rx,
+            terminal_size_forward,
+            running_forward,
+            display_for_forward,
+        )
     }));
 
     for child in children {

@@ -2,12 +2,12 @@ use std::io;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use termwiz::input::{InputEvent, InputParser, KeyCode, Modifiers, MouseButtons};
 
-use crate::config::{TerminalSize, GAME_HEIGHT, GAME_WIDTH};
+use crate::config::{GAME_HEIGHT, GAME_WIDTH, TerminalSize};
 
 // Captures keyboard and mouse input using termwiz
 pub fn capture_input<Reader: io::Read + Send + 'static>(
@@ -31,11 +31,15 @@ pub fn capture_input<Reader: io::Read + Send + 'static>(
                 break;
             }
             Ok(n) => {
-                parser.parse(&buf[0..n], |event| {
-                    if let Err(e) = input_tx.send(event) {
-                        eprintln!("Error sending event: {}", e);
-                    }
-                },true);
+                parser.parse(
+                    &buf[0..n],
+                    |event| {
+                        if let Err(e) = input_tx.send(event) {
+                            eprintln!("Error sending event: {}", e);
+                        }
+                    },
+                    true,
+                );
             }
         }
     }
@@ -168,7 +172,8 @@ pub fn forward_input_to_minecraft(
 
                         'c' => {
                             // Check for Ctrl+C
-                            if key_event.key == KeyCode::Char('c') && key_event.modifiers.contains(Modifiers::CTRL)
+                            if key_event.key == KeyCode::Char('c')
+                                && key_event.modifiers.contains(Modifiers::CTRL)
                             {
                                 running.store(false, Ordering::SeqCst);
                                 break;
@@ -253,7 +258,7 @@ pub fn forward_input_to_minecraft(
                         }
                     }
                 }
-                _ => {},
+                _ => {}
             },
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,

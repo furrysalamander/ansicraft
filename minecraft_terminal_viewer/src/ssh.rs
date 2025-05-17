@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc};
 
 use crate::config::{self, TerminalSize};
 use crate::minecraft;
@@ -13,21 +13,21 @@ use ratatui::layout::Rect;
 use russh::keys::ssh_key::{self, PublicKey};
 use russh::server::*;
 use russh::{Channel, ChannelId, Pty};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 // Function to load or create SSH key
 fn load_or_create_ssh_key() -> russh::keys::PrivateKey {
     // Honestly, maybe errors in this function should result in a panic.
     let key_path = Path::new("ssh_server_key");
-    
+
     // Try to load existing key
     if key_path.exists() {
         match russh::keys::load_secret_key(key_path, None) {
             Ok(key) => {
                 println!("Loaded existing SSH key");
-                return key
-            },
+                return key;
+            }
             Err(e) => {
                 eprintln!("Error loading SSH key: {:?}, generating new one", e);
             }
@@ -39,14 +39,13 @@ fn load_or_create_ssh_key() -> russh::keys::PrivateKey {
     match key.write_openssh_file(key_path, ssh_key::LineEnding::LF) {
         Ok(()) => {
             println!("Generated new SSH key");
-        },
+        }
         Err(e) => {
             eprintln!("Error saving SSH key: {:?}", e);
         }
     }
     return key;
 }
-
 
 struct MinecraftInstance {
     terminal_size: Arc<std::sync::Mutex<config::TerminalSize>>,
@@ -56,7 +55,10 @@ struct MinecraftInstance {
 }
 
 impl MinecraftInstance {
-    pub fn new<W: std::io::Write + Send + 'static>(writer: W, display: String) -> MinecraftInstance {
+    pub fn new<W: std::io::Write + Send + 'static>(
+        writer: W,
+        display: String,
+    ) -> MinecraftInstance {
         let (stdin_reader, stdin_writer) = pipe::pipe();
 
         let potato = Self {
@@ -69,18 +71,28 @@ impl MinecraftInstance {
             display: display.clone(),
         };
 
-        let config = minecraft::MinecraftConfig{ xorg_display: display, username: "docker".to_owned(), server_address: "".to_owned() };
+        let config = minecraft::MinecraftConfig {
+            xorg_display: display,
+            username: "docker".to_owned(),
+            server_address: "".to_owned(),
+        };
 
         let output_channel = Arc::new(std::sync::Mutex::new(writer));
         let input_channel = Arc::new(std::sync::Mutex::new(stdin_reader));
-        
+
         let running_clone = Arc::clone(&potato.running);
         let terminal_size_clone = Arc::clone(&potato.terminal_size);
-        
+
         tokio::spawn(async move {
-            let _ = minecraft::run(config, running_clone, output_channel, input_channel, terminal_size_clone);
+            let _ = minecraft::run(
+                config,
+                running_clone,
+                output_channel,
+                input_channel,
+                terminal_size_clone,
+            );
         });
-        
+
         potato
     }
 }
@@ -160,45 +172,42 @@ impl MinecraftClientServer {
         ":1".to_string()
     }
 
-
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
         // let clients = self.clients.clone();
         // tokio::spawn(async move {
-            // loop {
-            //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        // loop {
+        //     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-            //     for (_, (terminal, app)) in clients.lock().await.iter_mut() {
-            //         app.counter += 1;
+        //     for (_, (terminal, app)) in clients.lock().await.iter_mut() {
+        //         app.counter += 1;
 
-            //         terminal
-            //             .draw(|f| {
-            //                 let area = f.area();
-            //                 f.render_widget(Clear, area);
-            //                 let style = match app.counter % 3 {
-            //                     0 => Style::default().fg(Color::Red),
-            //                     1 => Style::default().fg(Color::Green),
-            //                     _ => Style::default().fg(Color::Blue),
-            //                 };
-            //                 let paragraph = Paragraph::new(format!("Counter: {}", app.counter))
-            //                     .alignment(ratatui::layout::Alignment::Center)
-            //                     .style(style);
-            //                 let block = Block::default()
-            //                     .title("Press 'c' to reset the counter!")
-            //                     .borders(Borders::ALL);
-            //                 f.render_widget(paragraph.block(block), area);
-            //             })
-            //             .unwrap();
-            //     }
-            // }
+        //         terminal
+        //             .draw(|f| {
+        //                 let area = f.area();
+        //                 f.render_widget(Clear, area);
+        //                 let style = match app.counter % 3 {
+        //                     0 => Style::default().fg(Color::Red),
+        //                     1 => Style::default().fg(Color::Green),
+        //                     _ => Style::default().fg(Color::Blue),
+        //                 };
+        //                 let paragraph = Paragraph::new(format!("Counter: {}", app.counter))
+        //                     .alignment(ratatui::layout::Alignment::Center)
+        //                     .style(style);
+        //                 let block = Block::default()
+        //                     .title("Press 'c' to reset the counter!")
+        //                     .borders(Borders::ALL);
+        //                 f.render_widget(paragraph.block(block), area);
+        //             })
+        //             .unwrap();
+        //     }
+        // }
         // });
 
         let config = Config {
             inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
             auth_rejection_time: std::time::Duration::from_secs(3),
             auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
-            keys: vec![
-                load_or_create_ssh_key(),
-            ],
+            keys: vec![load_or_create_ssh_key()],
             nodelay: true,
             ..Default::default()
         };
@@ -310,9 +319,9 @@ impl russh::server::Handler for MinecraftClientServer {
 
         let mut clients = self.clients.lock().await;
         let instance = clients.get_mut(&self.id).unwrap();
-        
+
         let mut size = instance.terminal_size.lock().unwrap();
-        
+
         size.target_width = col_width as usize;
         size.target_height = get_height_from_width(col_width as usize);
 
