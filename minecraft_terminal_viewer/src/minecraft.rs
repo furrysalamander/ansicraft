@@ -207,9 +207,10 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     let terminal_size_render = Arc::clone(&terminal_size);
     let terminal_size_forward = Arc::clone(&terminal_size);
     let display_for_forward = config.xorg_display.clone();
+    let display_for_ffmpeg = config.xorg_display.clone();
 
     children.push(thread::spawn(move || {
-        render::render_x11_window(completed_frames_tx, terminal_size_render, running_render)
+        render::render_x11_window(completed_frames_tx, terminal_size_render, display_for_ffmpeg, running_render)
     }));
     children.push(thread::spawn(move || {
         display_render_thread(completed_frames_rx, output_channel)

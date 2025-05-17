@@ -148,15 +148,16 @@ impl MinecraftClientServer {
 
     async fn get_next_available_display(&self) -> String {
         let mut displays = self.displays_in_use.lock().await;
-        for i in 0..=9 {
-            let display = format!(":1.{}", i);
+        // Use separate X server numbers instead of screen numbers (:1, :2, :3, etc.)
+        for i in 1..=10 {
+            let display = format!(":{}", i);
             if !displays.contains(&display) {
                 displays.insert(display.clone());
                 return display;
             }
         }
-        // Fallback: if all are in use, just use :1.0 (could also error)
-        ":1.0".to_string()
+        // Fallback: if all are in use, just use :1 (could also error)
+        ":1".to_string()
     }
 
 
