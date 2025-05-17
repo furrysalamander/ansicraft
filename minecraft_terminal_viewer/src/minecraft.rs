@@ -31,7 +31,6 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
     crossterm::execute!(
         writer,
         event::EnableMouseCapture,
-        event::EnableFocusChange,
         terminal::EnterAlternateScreen,
         cursor::Hide
     )?;
@@ -61,7 +60,6 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
     crossterm::execute!(
         writer,
         event::DisableMouseCapture,
-        event::DisableFocusChange,
         terminal::LeaveAlternateScreen,
         cursor::Show,
     )?;
