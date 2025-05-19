@@ -1,17 +1,40 @@
-use russh;
+use std::any;
 
-struct MinecraftSshServer {}
+use russh::{self, server::Server};
+use crate::ssh;
 
-struct MinecraftClientSession {}
+pub struct MinecraftSshServer {}
+
+impl MinecraftSshServer {
+    pub async fn run(&mut self) -> Result<(), anyhow::Error> {
+        let config = russh::server::Config {
+            inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
+            auth_rejection_time: std::time::Duration::from_secs(3),
+            auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
+            keys: vec![ssh::load_or_create_ssh_key()],
+            nodelay: true,
+            methods: vec![russh::MethodKind::PublicKey].into(),
+            ..Default::default()
+        };
+        
+        self.run_on_address(std::sync::Arc::new(config), ("0.0.0.0", 2222))
+            .await?;
+        Ok(())
+    }
+}
+pub struct MinecraftClientSession {
+}
 
 impl russh::server::Server for MinecraftSshServer {
     type Handler = MinecraftClientSession;
     
     fn new_client(&mut self, peer_addr: Option<std::net::SocketAddr>) -> Self::Handler {
-        todo!()
+        MinecraftClientSession {}
     }
     
-    fn handle_session_error(&mut self, _error: <Self::Handler as russh::server::Handler>::Error) {}
+    fn handle_session_error(&mut self, _error: <Self::Handler as russh::server::Handler>::Error) {
+
+    }
 }
 
 impl russh::server::Handler for MinecraftClientSession {

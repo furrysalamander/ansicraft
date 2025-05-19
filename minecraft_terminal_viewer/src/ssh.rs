@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 // Function to load or create SSH key
-fn load_or_create_ssh_key() -> russh::keys::PrivateKey {
+pub fn load_or_create_ssh_key() -> russh::keys::PrivateKey {
     // Honestly, maybe errors in this function should result in a panic.
     let key_path = Path::new("ssh_server_key");
 
