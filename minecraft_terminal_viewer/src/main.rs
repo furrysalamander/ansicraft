@@ -4,6 +4,7 @@ mod minecraft;
 mod render;
 mod ssh;
 mod xdo;
+mod sshng;
 
 use config::TerminalSize;
 use termwiz::terminal::Terminal;
