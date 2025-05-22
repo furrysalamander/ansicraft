@@ -51,6 +51,8 @@ impl ResourcePool {
     ) {
         loop {
             println!("Resource queue manager loop");
+            println!("Available resources: {:?}", available_resources);
+            // println!("Pending requests: {:?}", pending_requests);
             tokio::select! {
                 Some(mut req) = request_rx.recv() => {
                     if let Some(res_id) = available_resources.pop_front() {
@@ -68,15 +70,17 @@ impl ResourcePool {
                 },
 
                 Some(res_id) = release_rx.recv() => {
+                    let mut allocated = false;
                     while let Some(mut req) = pending_requests.pop_front() {
                         if req.cancel.try_recv().is_ok() {
                             let _ = req.status.send(ResourceStatus::Cancelled);
                             continue;
                         }
                         let _ = req.status.send(ResourceStatus::Success(res_id));
+                        allocated = true; // I hate this but I'm tired and I can fix it later.
                         break;
                     }
-                    if pending_requests.is_empty() {
+                    if !allocated {
                         available_resources.push_back(res_id);
                     }
                 }
