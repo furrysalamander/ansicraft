@@ -5,6 +5,7 @@ mod render;
 mod ssh;
 mod xdo;
 mod sshng;
+mod queueing;
 
 use config::TerminalSize;
 use termwiz::terminal::Terminal;
