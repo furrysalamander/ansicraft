@@ -45,9 +45,10 @@ impl MinecraftSshServer {
     }
 }
 
+#[derive(Clone)]
 pub struct MinecraftClientSession {
-    username: String,
     allocator: ResourceAllocator,
+    username: String,
     my_request_id: Option<usize>,
     my_x_session: Option<u32>,
 }
@@ -86,6 +87,7 @@ impl MinecraftClientSession {
     }
 
     pub async fn handle_session_background(
+        self,
         mut status_rx: mpsc::UnboundedReceiver<queueing::ResourceStatus>,
         username: String,
         session_handle: russh::server::Handle,
@@ -111,7 +113,7 @@ impl MinecraftClientSession {
                             ).await;
                             let _ = session_handle.close(channel_id).await;
 
-                            // allocator.release(resource_id).await;
+                            self.allocator.release(resource_id);
                             break;
                         }
                         queueing::ResourceStatus::QueuePosition(pos) => {
@@ -154,7 +156,7 @@ impl russh::server::Handler for MinecraftClientSession {
         let channel_id = channel.id();
 
         // Spawn background task that handles resource allocation, queueing, and session lifecycle
-        tokio::spawn(Self::handle_session_background(
+        tokio::spawn(self.clone().handle_session_background(
             self.allocator.request_resource(),
             username,
             session_handle,

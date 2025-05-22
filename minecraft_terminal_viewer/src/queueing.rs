@@ -151,6 +151,7 @@ impl ResourceAllocator {
     }
 
     pub fn release(&self, resource_id: u32) {
+        println!("Releasing resource {}", resource_id);
         let _ = self.release_tx.send(resource_id);
     }
 
