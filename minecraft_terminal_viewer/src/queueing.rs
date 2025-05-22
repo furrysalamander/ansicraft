@@ -52,7 +52,7 @@ impl ResourcePool {
         loop {
             println!("Resource queue manager loop");
             println!("Available resources: {:?}", available_resources);
-            // println!("Pending requests: {:?}", pending_requests);
+            println!("Pending requests: {:?}", pending_requests);
             tokio::select! {
                 Some(mut req) = request_rx.recv() => {
                     if let Some(res_id) = available_resources.pop_front() {
@@ -63,8 +63,6 @@ impl ResourcePool {
                             let _ = req.status.send(ResourceStatus::Cancelled);
                         }
                     } else {
-                        let _id = req.id;
-                        let _ = req.status.send(ResourceStatus::QueuePosition(pending_requests.len()));
                         pending_requests.push_back(req);
                     }
                 },
@@ -171,6 +169,7 @@ impl ResourceAllocator {
     }
 }
 
+#[derive(Debug)]
 pub struct ResourceRequest {
     pub id: usize,
     pub response: oneshot::Sender<u32>,
