@@ -38,5 +38,8 @@ docker-compose.override.yml
 # Logs
 *.log
 logs/
+
+# Other stuff
 minecraft_data/
 /minecraft_server_data
+ssh_server_key

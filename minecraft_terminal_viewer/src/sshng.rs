@@ -8,7 +8,7 @@ use std::{
     pin::Pin,
 };
 
-use crate::{queueing::{self, ResourceAllocator, ResourcePool}, ssh};
+use crate::{minecraft, queueing::{self, ResourceAllocator, ResourcePool}, ssh};
 use russh::{self, keys::PublicKeyBase64, server::Server};
 use tokio::sync::{mpsc, oneshot};
 
@@ -49,7 +49,7 @@ impl MinecraftSshServer {
 pub struct MinecraftClientSession {
     allocator: ResourceAllocator,
     username: String,
-    my_request_id: Option<usize>,
+    my_request_id: Option<usize>, // I think this can be eliminated
     my_x_session: Option<u32>,
 }
 
@@ -104,15 +104,27 @@ impl MinecraftClientSession {
                                 .data(channel_id, format!("✅ Assigned session {}\r\n", resource_id).into())
                                 .await;
 
+                            // Get Minecraft server address from environment variable if set
+                            let server_address = std::env::var("MINECRAFT_SERVER_ADDRESS").unwrap_or_else(|_| "".to_string());
+                            let minecraft_config = minecraft::MinecraftConfig { xorg_display: format!(":{}", resource_id+1), username, server_address };
+                            
+                            let minecraft_session = minecraft::run(
+                                // config: MinecraftConfig,
+                                // running: Arc<AtomicBool>,
+                                // output_channel: Arc<Mutex<Writer>>,
+                                // input_channel: Arc<Mutex<Reader>>,
+                                // terminal_size: Arc<Mutex<TerminalSize>>,
+                                minecraft_config,
+                            );
+                            
                             // Simulate session duration (replace with actual logic)
-                            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
                             let _ = session_handle.data(
                                 channel_id,
                                 russh::CryptoVec::from(format!("goodbye {}\r\n", username))
                             ).await;
                             let _ = session_handle.close(channel_id).await;
-
                             self.allocator.release(resource_id);
                             break;
                         }
