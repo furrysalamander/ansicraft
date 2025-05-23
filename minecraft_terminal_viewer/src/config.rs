@@ -9,10 +9,8 @@ pub const FFMPEG_BINARY: &str = "ffmpeg.exe";
 pub const FFMPEG_BINARY: &str = "ffmpeg";
 
 // Terminal size information
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TerminalSize {
-    // pub width: u16,
-    // pub height: u16,
     pub target_width: usize,
     pub target_height: usize,
 }
