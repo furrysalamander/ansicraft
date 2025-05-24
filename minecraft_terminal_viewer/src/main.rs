@@ -62,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
         let resize_running = running.clone();
 
         let target_width = 40 as usize;
-        let target_height = ((target_width * 9 / 16 + 1) / 2) * 2;
+        let target_height = render::get_height_from_width(target_width);
 
         let terminal_size = Arc::new(Mutex::new(TerminalSize {
             target_width,
@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
                         if let Ok(screen_size) = tw_term.get_screen_size() {
                             let mut size = resize_terminal_size.lock().unwrap();
                             size.target_width = screen_size.cols as usize;
-                            size.target_height = ((screen_size.cols as usize * 9 / 16 + 1) / 2) * 2;
+                            size.target_height = render::get_height_from_width(screen_size.cols as usize);
                         }
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }

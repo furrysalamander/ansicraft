@@ -35,6 +35,7 @@ fn set_nonblocking(fd: RawFd, nonblocking: bool) -> io::Result<()> {
 }
 
 pub fn get_height_from_width(width: usize) -> usize {
+    // TODO: dynamically get aspect ratio from config GAME_WIDTH and GAME_HEIGHT
     let target_height = ((width * 10 / 16 + 1) / 2) * 2;
     return target_height;
 }
