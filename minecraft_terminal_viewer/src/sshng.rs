@@ -10,6 +10,7 @@ use std::{
 
 use crate::{minecraft, queueing::{self, ResourceAllocator, ResourcePool}, ssh};
 use russh::{self, keys::PublicKeyBase64, server::Server};
+use termwiz::input;
 use tokio::sync::{mpsc, oneshot};
 
 const MAX_SIMULTANEOUS_SESSIONS: u32 = 2;
@@ -35,6 +36,7 @@ impl MinecraftSshServer {
             auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
             keys: vec![ssh::load_or_create_ssh_key()],
             nodelay: true,
+            channel_buffer_size: 1,
             methods: authentication_methods,
             ..Default::default()
         };
@@ -52,6 +54,8 @@ pub struct MinecraftClientSession {
     my_request_id: Option<usize>, // I think this can be eliminated
     my_x_session: Option<u32>,
     terminal_size: Arc<Mutex<crate::config::TerminalSize>>, // Store terminal size for resize events
+    input_channel_tx: mpsc::UnboundedSender<Vec<u8>>,
+    input_channel_rx: Arc<Mutex<mpsc::UnboundedReceiver<Vec<u8>>>>,
 }
 
 impl Server for MinecraftSshServer {
@@ -60,12 +64,17 @@ impl Server for MinecraftSshServer {
     fn new_client(&mut self, _peer_addr: Option<std::net::SocketAddr>) -> Self::Handler {
         // Create allocator from pool for each new client
         let allocator = ResourceAllocator::new(&self.x_server_pool);
+
+        let (input_channel_tx, input_channel_rx) = mpsc::unbounded_channel();
+
         MinecraftClientSession {
             username: "".to_owned(),
             allocator,
             my_request_id: None,
             my_x_session: None, // Sooo, due to the clone semantics, I'm pretty sure that this causes the session to not get cleaned up by drop because it only gets added after the clone happens.  Some arc/mutex action can fix this.  I'll deal with it later.
             terminal_size: Arc::new(Mutex::new(crate::config::TerminalSize { target_width: 10, target_height: 10 })),
+            input_channel_tx,
+            input_channel_rx: Arc::new(Mutex::new(input_channel_rx)),
         }
     }
 
@@ -119,7 +128,7 @@ impl MinecraftClientSession {
                             // Output: send Minecraft output to SSH client
                             let output_channel = Arc::new(Mutex::new(SessionWriter::new(session_handle.clone(), channel_id)));
                             // Input: receive input from SSH client
-                            let input_channel = Arc::new(Mutex::new(SessionReader::new(session_handle.clone(), channel_id)));
+                            let input_channel = Arc::new(Mutex::new(SessionReader::new(self.input_channel_rx.clone())));
 
                             // Run the Minecraft session (blocking call)
                             tokio::spawn(async move {
@@ -255,13 +264,17 @@ impl russh::server::Handler for MinecraftClientSession {
         Ok(())
     }
 
-    fn data(
+    async fn data(
         &mut self,
         _channel: russh::ChannelId,
-        _data: &[u8],
+        data: &[u8],
         _session: &mut russh::server::Session,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send {
-        async { Ok(()) }
+    ) -> Result<(), Self::Error> {
+        if let Err(e) = self.input_channel_tx.send(data.to_owned()) {
+            eprintln!("Failed to send data: {}", e);
+        }
+        // println!("Received data: {:?}", String::from_utf8_lossy(data));
+        Ok(())
     }
 }
 
@@ -306,22 +319,31 @@ impl Write for SessionWriter {
 
 // Stub for SessionReader - to be implemented
 struct SessionReader {
-    // For a real implementation, you would buffer incoming SSH data here
-    // For now, this is a stub
-    session_handle: russh::server::Handle,
-    channel_id: russh::ChannelId,
+    buffer: Arc<Mutex<mpsc::UnboundedReceiver<Vec<u8>>>>,
 }
 
 impl SessionReader {
-    fn new(session_handle: russh::server::Handle, channel_id: russh::ChannelId) -> Self {
-        Self { session_handle, channel_id }
+    fn new(buffer: Arc<Mutex<mpsc::UnboundedReceiver<Vec<u8>>>>) -> Self {
+        Self { buffer }
     }
 }
 
 impl Read for SessionReader {
-    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-    
-        // TODO: Implement reading from SSH client (requires buffering input from SSH data events)
-        Ok(0)
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        // Lock the receiver for exclusive access
+        let mut receiver = self.buffer.lock().unwrap();
+        // println!("Reading from input channel");
+        match receiver.try_recv() {
+            Ok(data) => {
+                // println!("Read data from input channel: {:?}", String::from_utf8_lossy(&data));
+                let to_copy = std::cmp::min(buf.len(), data.len());
+                buf[..to_copy].copy_from_slice(&data[..to_copy]);
+                Ok(to_copy)
+            }
+            Err(mpsc::error::TryRecvError::Empty) => Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, "")),
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Channel closed"))
+            }
+        }
     }
 }
