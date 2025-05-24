@@ -16,5 +16,10 @@ for i in {1..10}; do
 done
 sleep 2
 
+# Set invisible cursor for each display
+for i in {1..10}; do
+    DISPLAY=:$i xsetroot -cursor /root/blank_cursor.xbm /root/blank_cursor.xbm || true
+done
+
 # Start terminal viewer
 RUST_BACKTRACE=full /root/termcast

@@ -40,6 +40,6 @@ docker-compose.override.yml
 logs/
 
 # Other stuff
-minecraft_data/
+.minecraft/
 /minecraft_server_data
 ssh_server_key

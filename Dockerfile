@@ -58,6 +58,6 @@ COPY launch_minecraft.py /root/launch_minecraft.py
 # Add entrypoint
 COPY --chmod=0755 entry-point.sh /root/entry-point.sh
 
-# IDK why, but this is needed to make the launcher work.
+COPY blank_cursor.xbm /root/blank_cursor.xbm
 
 ENTRYPOINT ["/root/entry-point.sh"]
