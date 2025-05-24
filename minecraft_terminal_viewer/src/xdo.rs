@@ -81,7 +81,7 @@ pub fn forward_input_to_minecraft(
     ) -> (i32, i32) {
         let dx = current_x as i32 - last_x as i32;
         let dy = current_y as i32 - last_y as i32;
-        (dx * 5, dy * 5)
+        (dx * 10, dy * 10)
     }
 
     #[derive(Clone)]

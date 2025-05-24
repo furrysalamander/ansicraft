@@ -62,6 +62,9 @@ if not os.path.exists(options_dir):
         f.write("rawMouseInput:false\n")
         f.write("fullscreen:true\n")
         f.write("autoJump:true\n")
+        f.write("graphicsMode:0\n")
+        f.write("guiScale:0\n")
+        f.write("maxFps:30\n")
 
 # print("Downloading Minecraft...")
 # Download/install the client
@@ -78,9 +81,6 @@ options = {
     "username": args.username,
     "uuid": "00000000-0000-0000-0000-000000000000",
     "token": "",
-    "customResolution": True,
-    "resolutionWidth": "320",
-    "resolutionHeight": "200",
 }
 
 minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
