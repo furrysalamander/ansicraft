@@ -13,7 +13,7 @@ use crossterm::{
 use crate::config::{FFMPEG_BINARY, GAME_HEIGHT, GAME_WIDTH, TerminalSize};
 
 pub fn get_height_from_width(width: usize) -> usize {
-    let target_height = ((width * 9 / 16 + 1) / 2) * 2;
+    let target_height = ((width * 3 / 4 + 1) / 2) * 2;
     return target_height;
 }
 

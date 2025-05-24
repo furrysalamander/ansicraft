@@ -77,7 +77,10 @@ if args.download_only:
 options = {
     "username": args.username,
     "uuid": "00000000-0000-0000-0000-000000000000",
-    "token": ""
+    "token": "",
+    "customResolution": True,
+    "resolutionWidth": "320",
+    "resolutionHeight": "200",
 }
 
 minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(

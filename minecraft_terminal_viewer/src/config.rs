@@ -1,6 +1,6 @@
 // Game's native resolution
-pub const GAME_WIDTH: u16 = 640;
-pub const GAME_HEIGHT: u16 = 480;
+pub const GAME_WIDTH: u16 = 320;
+pub const GAME_HEIGHT: u16 = 240;
 
 // Platform-specific ffmpeg binary
 #[cfg(target_os = "windows")]
