@@ -1,17 +1,17 @@
 use std::{
-    collections::VecDeque,
     io::{Read, Write},
-    pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
 };
 
-use crate::{minecraft, queueing::{self, ResourceAllocator, ResourcePool}, ssh};
+use crate::{
+    minecraft,
+    queueing::{self, ResourceAllocator, ResourcePool},
+    ssh,
+};
 use russh::{self, keys::PublicKeyBase64, server::Server};
-use termwiz::input;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 const MAX_SIMULTANEOUS_SESSIONS: u32 = 2;
 
@@ -72,7 +72,10 @@ impl Server for MinecraftSshServer {
             allocator,
             my_request_id: None,
             my_x_session: None, // Sooo, due to the clone semantics, I'm pretty sure that this causes the session to not get cleaned up by drop because it only gets added after the clone happens.  Some arc/mutex action can fix this.  I'll deal with it later.
-            terminal_size: Arc::new(Mutex::new(crate::config::TerminalSize { target_width: 10, target_height: 10 })),
+            terminal_size: Arc::new(Mutex::new(crate::config::TerminalSize {
+                target_width: 10,
+                target_height: 10,
+            })),
             input_channel_tx,
             input_channel_rx: Arc::new(Mutex::new(input_channel_rx)),
         }
@@ -98,7 +101,7 @@ impl MinecraftClientSession {
     }
 
     pub async fn handle_session_background(
-        mut self,
+        self,
         mut status_rx: mpsc::UnboundedReceiver<queueing::ResourceStatus>,
         username: String,
         session_handle: russh::server::Handle,
@@ -139,7 +142,7 @@ impl MinecraftClientSession {
                                     input_channel,
                                     self.terminal_size.clone(),
                                 ).unwrap();
-                                
+
                                 let _ = session_handle.close(channel_id).await;
                                 self.allocator.release(resource_id);
 
@@ -216,28 +219,29 @@ impl russh::server::Handler for MinecraftClientSession {
 
     async fn authentication_banner(&mut self) -> Result<Option<String>, Self::Error> {
         Ok(Some(
-            "If you are unable to log in, please be sure to generate a public key first.\n".to_owned(),
+            "If you are unable to log in, please be sure to generate a public key first.\n"
+                .to_owned(),
         ))
     }
 
     async fn pty_request(
-            &mut self,
-            _channel: russh::ChannelId,
-            _term: &str,
-            col_width: u32,
-            _row_height: u32,
-            _pix_width: u32, // TODO MAKE THIS SUPPORT PIXEL MOUSE COORDS!!!!!
-            _pix_height: u32,
-            _modes: &[(russh::Pty, u32)],
-            _session: &mut russh::server::Session,
-        ) -> Result<(), Self::Error> {
+        &mut self,
+        _channel: russh::ChannelId,
+        _term: &str,
+        col_width: u32,
+        _row_height: u32,
+        _pix_width: u32, // TODO MAKE THIS SUPPORT PIXEL MOUSE COORDS!!!!!
+        _pix_height: u32,
+        _modes: &[(russh::Pty, u32)],
+        _session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
         // Update terminal size on PTY request
         // if let Some(ref term_size) = self.terminal_size {
 
         // TODO: set this using a function to deduplicate it with the code in window_change_request
-            let mut size = self.terminal_size.lock().unwrap();
-            size.target_width = col_width as usize;
-            size.target_height = crate::render::get_height_from_width(col_width as usize);
+        let mut size = self.terminal_size.lock().unwrap();
+        size.target_width = col_width as usize;
+        size.target_height = crate::render::get_height_from_width(col_width as usize);
         // } else {
         //     println!("Can't set terminal size.");
         // }
@@ -255,9 +259,9 @@ impl russh::server::Handler for MinecraftClientSession {
     ) -> Result<(), Self::Error> {
         // Update terminal size on window change
         // if let Some(ref term_size) = self.terminal_size {
-            let mut size = self.terminal_size.lock().unwrap();
-            size.target_width = col_width as usize;
-            size.target_height = crate::render::get_height_from_width(col_width as usize);
+        let mut size = self.terminal_size.lock().unwrap();
+        size.target_width = col_width as usize;
+        size.target_height = crate::render::get_height_from_width(col_width as usize);
         // } else {
         //     println!("Can't set terminal size.");
         // }
@@ -293,8 +297,8 @@ struct SessionWriter {
 
 impl SessionWriter {
     fn new(session_handle: russh::server::Handle, channel_id: russh::ChannelId) -> Self {
-        Self { 
-            session_handle, 
+        Self {
+            session_handle,
             channel_id,
             buffer: vec![],
         }
@@ -311,7 +315,10 @@ impl Write for SessionWriter {
         // Note: This is a stub; in production, you may want to buffer or spawn a task
         // let data = russh::CryptoVec::from_slice(self.&buffer);
         // Ignore errors for now
-        futures::executor::block_on(self.session_handle.data(self.channel_id, self.buffer.clone().into()));
+        futures::executor::block_on(
+            self.session_handle
+                .data(self.channel_id, self.buffer.clone().into()),
+        );
         self.buffer.clear();
         Ok(())
     }
@@ -340,10 +347,13 @@ impl Read for SessionReader {
                 buf[..to_copy].copy_from_slice(&data[..to_copy]);
                 Ok(to_copy)
             }
-            Err(mpsc::error::TryRecvError::Empty) => Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, "")),
-            Err(mpsc::error::TryRecvError::Disconnected) => {
-                Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Channel closed"))
+            Err(mpsc::error::TryRecvError::Empty) => {
+                Err(std::io::Error::new(std::io::ErrorKind::WouldBlock, ""))
             }
+            Err(mpsc::error::TryRecvError::Disconnected) => Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "Channel closed",
+            )),
         }
     }
 }

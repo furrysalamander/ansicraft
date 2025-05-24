@@ -68,7 +68,7 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
 }
 
 fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Result<()> {
-    use std::process::{Command, Stdio};
+    use std::process::Command;
 
     // Set the DISPLAY environment variable based on config.xorg_display
     let display_env = config.xorg_display.clone();
@@ -233,7 +233,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
             terminal_size_forward,
             running_forward,
             display_for_forward,
-            config.server_address == ""
+            config.server_address == "",
         )
     }));
 

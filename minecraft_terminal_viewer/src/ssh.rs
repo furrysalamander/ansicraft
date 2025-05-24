@@ -9,7 +9,6 @@ use crate::config::{self, TerminalSize};
 use crate::minecraft;
 use crate::render::get_height_from_width;
 use rand_core::OsRng;
-use ratatui::layout::Rect;
 use russh::keys::ssh_key::{self, PublicKey};
 use russh::server::*;
 use russh::{Channel, ChannelId, Pty};
@@ -72,8 +71,9 @@ impl MinecraftInstance {
         };
 
         // Get Minecraft server address from environment variable if set
-        let server_address = std::env::var("MINECRAFT_SERVER_ADDRESS").unwrap_or_else(|_| "".to_string());
-        
+        let server_address =
+            std::env::var("MINECRAFT_SERVER_ADDRESS").unwrap_or_else(|_| "".to_string());
+
         let config = minecraft::MinecraftConfig {
             xorg_display: display.clone(),
             username: format!("docker{}", display).to_owned(),

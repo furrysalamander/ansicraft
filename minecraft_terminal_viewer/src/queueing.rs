@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -109,7 +109,7 @@ impl ResourceAllocator {
         }
     }
 
-        /// Sends a resource request and returns an UnboundedReceiver for status updates
+    /// Sends a resource request and returns an UnboundedReceiver for status updates
     pub fn request_resource(&self) -> mpsc::UnboundedReceiver<ResourceStatus> {
         let (status_tx, status_rx) = mpsc::unbounded_channel();
         let cancel_tx = self.cancel_tx.clone();

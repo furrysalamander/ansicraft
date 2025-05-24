@@ -1,19 +1,17 @@
 // filepath: /home/mike/source/docker-minecraft-rtsp/minecraft_terminal_viewer/src/main.rs
 mod config;
 mod minecraft;
+mod queueing;
 mod render;
 mod ssh;
-mod xdo;
 mod sshng;
-mod queueing;
+mod xdo;
 
 use config::TerminalSize;
 use termwiz::terminal::Terminal;
 
 use std::io;
 use std::io::IsTerminal;
-use std::panic;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -21,7 +19,7 @@ use crossterm::{
     cursor,
     event::{self},
     execute,
-    terminal::{self, Clear, ClearType, size},
+    terminal::{self, Clear, ClearType},
 };
 
 // Function to clean up terminal state
@@ -76,19 +74,29 @@ async fn main() -> anyhow::Result<()> {
         thread::spawn(move || {
             if let Ok(termwiz_caps) = termwiz::caps::Capabilities::new_from_env() {
                 if let Ok(mut tw_term) = termwiz::terminal::UnixTerminal::new(termwiz_caps) {
-                while resize_running.load(std::sync::atomic::Ordering::SeqCst) {
-                    if let Ok(screen_size) = tw_term.get_screen_size() {
-                        let mut size = resize_terminal_size.lock().unwrap();
-                        size.target_width = screen_size.cols as usize;
-                        size.target_height = ((screen_size.cols as usize * 9 / 16 + 1) / 2) * 2;
+                    while resize_running.load(std::sync::atomic::Ordering::SeqCst) {
+                        if let Ok(screen_size) = tw_term.get_screen_size() {
+                            let mut size = resize_terminal_size.lock().unwrap();
+                            size.target_width = screen_size.cols as usize;
+                            size.target_height = ((screen_size.cols as usize * 9 / 16 + 1) / 2) * 2;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(50));
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
-            }
             }
         });
 
-        minecraft::run(minecraft::MinecraftConfig { xorg_display: ":1".to_owned(), username: "docker".to_owned(), server_address: "".to_owned() }, running, stdout_arc, stdin_arc, terminal_size)?;
+        minecraft::run(
+            minecraft::MinecraftConfig {
+                xorg_display: ":1".to_owned(),
+                username: "docker".to_owned(),
+                server_address: "".to_owned(),
+            },
+            running,
+            stdout_arc,
+            stdin_arc,
+            terminal_size,
+        )?;
 
         // crossterm::execute!(
         //     output_channel,
