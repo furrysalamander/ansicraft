@@ -1,19 +1,42 @@
 // filepath: /home/mike/source/docker-minecraft-rtsp/minecraft_terminal_viewer/src/render.rs
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, Read, ErrorKind};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use std::os::unix::io::{AsRawFd, RawFd};
+use std::collections::VecDeque;
 
-use crossterm::{
-    execute,
-    terminal::{Clear, ClearType},
-};
+use crossterm::terminal::{Clear, ClearType};
 
 use crate::config::{FFMPEG_BINARY, GAME_HEIGHT, GAME_WIDTH, TerminalSize};
 
+// Helper function to set or unset nonblocking mode on a file descriptor
+fn set_nonblocking(fd: RawFd, nonblocking: bool) -> io::Result<()> {
+    use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
+    
+    unsafe {
+        let mut flags = fcntl(fd, F_GETFL, 0);
+        if flags < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        
+        if nonblocking {
+            flags |= O_NONBLOCK;
+        } else {
+            flags &= !O_NONBLOCK;
+        }
+        
+        if fcntl(fd, F_SETFL, flags) < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    
+    Ok(())
+}
+
 pub fn get_height_from_width(width: usize) -> usize {
-    let target_height = ((width * 3 / 4 + 1) / 2) * 2;
+    let target_height = ((width * 10 / 16 + 1) / 2) * 2;
     return target_height;
 }
 
@@ -47,6 +70,7 @@ pub fn render_x11_window(
             let x11_grab_args = [
                 "-f",
                 "x11grab",
+                "-framerate", "30",
                 "-video_size",
                 &format!("{}x{}", GAME_WIDTH, GAME_HEIGHT),
                 "-i",
@@ -103,9 +127,9 @@ pub fn render_x11_window(
     Ok(())
 }
 
-// Renders an arbitrary bytes buffer to the terminal
-fn render_byte_stream<R: Read>(
-    buffer: R,
+// Renders an arbitrary bytes buffer to the terminal using non-blocking I/O
+fn render_byte_stream<R: Read + AsRawFd>(
+    mut buffer: R,
     height: usize,
     width: usize,
     offset_x: usize,
@@ -113,79 +137,104 @@ fn render_byte_stream<R: Read>(
     render_tx: mpsc::SyncSender<String>,
     running: Arc<AtomicBool>,
 ) -> io::Result<()> {
-    // The size of the static buffer for holding raw frame data
-    let buffer_size = height * width * 3;
-
-    // Create a buffered reader to allow peeking and discarding
-    let mut buf_reader = BufReader::with_capacity(buffer_size * 4, buffer);
-
-    // The buffer for holding the raw RGB values for the current frame
-    let mut frame_data = vec![0u8; buffer_size];
-
+    // One frame is (height * width * 3) bytes (RGB for each pixel)
+    let frame_size = height * width * 3;
+    
+    // Set non-blocking mode on the raw file descriptor
+    set_nonblocking(buffer.as_raw_fd(), true)?;
+    
+    // Use a VecDeque to store incoming frames
+    let mut frame_queue = VecDeque::new();
+    
+    // Storage for the frame we'll actually process
+    let mut frame_data = vec![0u8; frame_size];
+    
+    // Temporary buffer for reading data
+    let mut read_buffer = vec![0u8; frame_size];
+    let mut partial_buffer = Vec::with_capacity(frame_size);
+    
     while running.load(Ordering::SeqCst) {
-        // For holding the formatted escape sequence
-        let mut output = String::with_capacity(13 + (height / 2) * (width * 41 + 8));
-
-        // Start by moving the cursor to the appropriate coordinates
-        output.push_str(&format!("\x1b[{};{}H", offset_y, offset_x));
-
-        // Check if we need to drop frames to catch up
-        // This is similar to the Go code's frame dropping logic
-        while buf_reader.buffer().len() > buffer_size * 2 {
-            // Too many frames have accumulated, discard one frame to catch up
-            let mut discard_buffer = vec![0u8; buffer_size];
-            match buf_reader.read_exact(&mut discard_buffer) {
-                Ok(_) => {
-                    // Frame successfully discarded
-                }
-                Err(_) => {
-                    // Error reading, just break from discard loop
+        // Read as much data as possible without blocking
+        let mut read_something = false;
+        
+        loop {
+            match buffer.read(&mut read_buffer) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    read_something = true;
+                    
+                    // Add the new data to our partial buffer
+                    partial_buffer.extend_from_slice(&read_buffer[0..n]);
+                    
+                    // Process complete frames from the partial buffer
+                    while partial_buffer.len() >= frame_size {
+                        // Extract a complete frame
+                        let frame = partial_buffer.drain(0..frame_size).collect::<Vec<u8>>();
+                        
+                        // Add to the queue, limiting queue size to avoid memory issues
+                        frame_queue.push_back(frame);
+                    }
+                },
+                Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                    // No more data available right now
                     break;
-                }
+                },
+                Err(e) => return Err(e), // Actual error
             }
         }
-
-        // Fill the frame_data buffer with a single frame's worth of pixel information
-        match buf_reader.read_exact(&mut frame_data) {
-            Ok(_) => {
-                // Iterate through the frame two rows at a time
-                for row_index in (0..height).step_by(2) {
-                    for column_index in 0..width {
-                        // Find the correct offset in the frame data for the current pixel
-                        let top_pixel_start = ((row_index * width) + column_index) * 3;
-                        let bottom_pixel_start = (((row_index + 1) * width) + column_index) * 3;
-
-                        // Populate the final buffer with a single formatted character
-                        output.push_str(&format!(
-                            "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m▄",
-                            frame_data[top_pixel_start],
-                            frame_data[top_pixel_start + 1],
-                            frame_data[top_pixel_start + 2],
-                            frame_data[bottom_pixel_start],
-                            frame_data[bottom_pixel_start + 1],
-                            frame_data[bottom_pixel_start + 2],
-                        ));
-                    }
-
-                    // Move the cursor down a single row and back to the starting column
-                    output.push_str(&format!("\x1b[B\x1b[{}D", width));
-                }
-
-                // Reset the output back to standard colors
-                output.push_str("\x1b[m");
-
-                // Hand off the formatted string to the render thread
-                if let Err(_) = render_tx.send(output) {
-                    // Receiver has been dropped, we should exit
-                    break;
-                }
+        
+        // Render the most recent frame if available
+        if let Some(latest_frame) = frame_queue.pop_back() {
+            // Put any remaining frames back at the end of the queue
+            // This effectively drops all but the latest frame
+            if !frame_queue.is_empty() {
+                let dropped_count = frame_queue.len();
+                frame_queue.clear();
+                eprintln!("Dropping {} frames for real-time display", dropped_count);
             }
-            Err(_) => {
-                // Error reading from buffer, we should exit
-                break;
+            
+            // Copy the latest frame to our frame data buffer
+            frame_data.copy_from_slice(&latest_frame);
+            
+            // Build the output escape sequence
+            let mut output = String::with_capacity(13 + (height / 2) * (width * 41 + 8));
+            output.push_str(&format!("\x1b[{};{}H", offset_y + 1, offset_x + 1));
+            
+            // Render the frame (iterate two rows per character)
+            for row_index in (0..height).step_by(2) {
+                for column_index in 0..width {
+                    let top_pixel_start = ((row_index * width) + column_index) * 3;
+                    let bottom_pixel_start = (((row_index + 1) * width) + column_index) * 3;
+                    
+                    output.push_str(&format!(
+                        "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m▄",
+                        frame_data[top_pixel_start],
+                        frame_data[top_pixel_start + 1],
+                        frame_data[top_pixel_start + 2],
+                        frame_data[bottom_pixel_start],
+                        frame_data[bottom_pixel_start + 1],
+                        frame_data[bottom_pixel_start + 2],
+                    ));
+                }
+                output.push_str(&format!("\x1b[B\x1b[{}D", width));
             }
+            
+            // Reset colors
+            output.push_str("\x1b[m");
+            
+            // Send the rendered output
+            if render_tx.send(output).is_err() {
+                break; // Receiver dropped
+            }
+        } else if !read_something && partial_buffer.len() < frame_size {
+            // If we didn't read anything and don't have a full frame, sleep briefly
+            // to avoid busy-waiting
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
-
+    
+    // Restore blocking mode before returning
+    let _ = set_nonblocking(buffer.as_raw_fd(), false);
+    
     Ok(())
 }
