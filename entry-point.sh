@@ -3,6 +3,12 @@
 # For some stupid reason, the python script can't resolve DNS unless we override what docker sets.
 echo "nameserver 8.8.8.8" > /etc/resolv.conf
 
+# Clean up any existing X server lock files
+for i in {1..10}; do
+    rm -f "/tmp/.X$i-lock"
+    rm -f "/tmp/.X11-unix/X$i"
+done
+
 # Start multiple Xorg instances with dummy drivers for different displays
 # We'll start X servers on :1 through :10 to support multiple seats
 for i in {1..10}; do

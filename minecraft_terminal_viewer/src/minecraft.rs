@@ -199,7 +199,7 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
     // First, launch Minecraft in the background
     run_minecraft(config.clone(), running.clone())?;
 
-    let (completed_frames_tx, completed_frames_rx) = mpsc::channel();
+    let (completed_frames_tx, completed_frames_rx) = mpsc::sync_channel(1);
     let (input_event_tx, input_event_rx) = mpsc::channel();
 
     let mut children = vec![];

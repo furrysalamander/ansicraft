@@ -1,5 +1,5 @@
 // filepath: /home/mike/source/docker-minecraft-rtsp/minecraft_terminal_viewer/src/render.rs
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -19,7 +19,7 @@ pub fn get_height_from_width(width: usize) -> usize {
 
 // Renders the Minecraft X11 screen directly to the terminal with resize support
 pub fn render_x11_window(
-    render_tx: mpsc::Sender<String>,
+    render_tx: mpsc::SyncSender<String>,
     term_size: Arc<Mutex<TerminalSize>>,
     display: String,
     running: Arc<AtomicBool>,
@@ -27,10 +27,6 @@ pub fn render_x11_window(
     let mut current_process: Option<std::process::Child> = None;
     let mut last_width = 0;
     let mut last_height = 0;
-
-    // Clear the terminal on startup
-    let mut stdout = io::stdout();
-    execute!(stdout, Clear(ClearType::All))?;
 
     while running.load(Ordering::SeqCst) {
         // Get current terminal dimensions
@@ -46,10 +42,6 @@ pub fn render_x11_window(
                 let _ = process.kill();
                 let _ = process.wait();
             }
-
-            // Clear the terminal when dimensions change
-            let mut stdout = io::stdout();
-            execute!(stdout, Clear(ClearType::All))?;
 
             // Start a new ffmpeg process with updated dimensions
             let x11_grab_args = [
@@ -74,7 +66,7 @@ pub fn render_x11_window(
                 .stderr(Stdio::null()) // Redirect stderr to /dev/null
                 .spawn()?;
 
-            let stdout = ffmpeg_process.stdout.take().unwrap();
+            let ffmpeg_stdout = ffmpeg_process.stdout.take().unwrap();
             current_process = Some(ffmpeg_process);
 
             // Clone necessary channels and values for the render thread
@@ -84,7 +76,7 @@ pub fn render_x11_window(
             // Spawn a thread to handle the rendering for this process
             let _render_thread = thread::spawn(move || {
                 if let Err(e) = render_byte_stream(
-                    stdout,
+                    ffmpeg_stdout,
                     target_height,
                     target_width,
                     0,
@@ -118,7 +110,7 @@ fn render_byte_stream<R: Read>(
     width: usize,
     offset_x: usize,
     offset_y: usize,
-    render_tx: mpsc::Sender<String>,
+    render_tx: mpsc::SyncSender<String>,
     running: Arc<AtomicBool>,
 ) -> io::Result<()> {
     // The size of the static buffer for holding raw frame data

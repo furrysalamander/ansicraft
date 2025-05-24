@@ -38,7 +38,7 @@ pub fn capture_input<Reader: io::Read + Send + 'static>(
                             eprintln!("Error sending event: {}", e);
                         }
                     },
-                    true,
+                    false,
                 );
             }
         }

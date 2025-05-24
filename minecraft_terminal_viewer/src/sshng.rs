@@ -299,6 +299,7 @@ impl Write for SessionWriter {
         // let data = russh::CryptoVec::from_slice(self.&buffer);
         // Ignore errors for now
         futures::executor::block_on(self.session_handle.data(self.channel_id, self.buffer.clone().into()));
+        self.buffer.clear();
         Ok(())
     }
 }
