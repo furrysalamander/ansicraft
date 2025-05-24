@@ -8,6 +8,7 @@ anyhow = "1.0"
 crossterm = "0.29"
 futures = "0.3.31"
 image = "0.25"
+libc = "0.2"
 nix = { version = "0.30", features = ["signal"] }
 pipe = "0.4"
 rand_core = "0.6"
