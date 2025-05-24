@@ -3,7 +3,7 @@
 set -e
 
 # Directory to store minecraft data
-MINECRAFT_DATA_DIR="$(pwd)/minecraft_data"
+MINECRAFT_DATA_DIR="$(pwd)/.minecraft"
 MINECRAFT_SERVER_DATA_DIR="$(pwd)/minecraft_server_data"
 
 # Create minecraft data directories if they don't exist
