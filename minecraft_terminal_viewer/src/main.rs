@@ -42,7 +42,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Indicate that the user is prompted for input, if this is a terminal.
     if !stdin.is_terminal() {
-        let mut server = ssh::MinecraftClientServer::new();
+        // let mut server = ssh::MinecraftClientServer::new();
+        let mut server = sshng::MinecraftSshServer::new();
         server.run().await
     } else {
         // Clear the terminal

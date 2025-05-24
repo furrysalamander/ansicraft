@@ -13,7 +13,7 @@ use crate::{
 use russh::{self, keys::PublicKeyBase64, server::Server};
 use tokio::sync::mpsc;
 
-const MAX_SIMULTANEOUS_SESSIONS: u32 = 2;
+const MAX_SIMULTANEOUS_SESSIONS: u32 = 10;
 
 pub struct MinecraftSshServer {
     x_server_pool: ResourcePool,
