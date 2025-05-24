@@ -6,9 +6,25 @@ import argparse
 import tempfile
 import signal
 import atexit
+import urllib.request
 
 # Global variable to track the subprocess
 minecraft_process = None
+
+def download_if_url(mrpack_path: str) -> str:
+    if mrpack_path.startswith("http://") or mrpack_path.startswith("https://"):
+        print("Downloading mrpack file from URL...")
+        try:
+            response = urllib.request.urlopen(mrpack_path)
+            data = response.read()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mrpack") as tmp:
+                tmp.write(data)
+                mrpack_path = tmp.name
+            print("Downloaded mrpack file to temporary file.")
+        except Exception as e:
+            print(f"Failed to download mrpack file: {e}", file=sys.stderr)
+            sys.exit(1)
+    return mrpack_path
 
 def signal_handler(sig, frame):
     """Handle signals by terminating the Minecraft subprocess"""
@@ -47,6 +63,8 @@ def parse_arguments():
 minecraft_version = "1.21.4"
 # Directory for minecraft
 minecraft_directory = "/root/.minecraft"
+# Simply Optimized Pack
+# mrpack_path = download_if_url("https://cdn.modrinth.com/data/BYfVnHa7/versions/ItmPdrKZ/Simply%20Optimized-1.21.4-2.0.1.mrpack")
 
 # Parse command line arguments
 args = parse_arguments()
@@ -69,6 +87,7 @@ if not os.path.exists(options_dir):
 # print("Downloading Minecraft...")
 # Download/install the client
 minecraft_launcher_lib.install.install_minecraft_version(minecraft_version, minecraft_directory)
+# minecraft_launcher_lib.mrpack.install_mrpack(mrpack_path, minecraft_directory)
 
 # If download-only mode is specified, exit now
 if args.download_only:
