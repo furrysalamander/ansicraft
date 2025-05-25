@@ -18,6 +18,15 @@ else
   echo "Using default Minecraft server address (container name)"
 fi
 
+echo "Cleaning up any previous Docker resources..."
+docker compose down --remove-orphans
+
+# Ensure the minecraft-network exists
+if ! docker network ls | grep -q minecraft-network; then
+  echo "Creating minecraft-network..."
+  docker network create minecraft-network
+fi
+
 echo "Building and starting Docker containers..."
 docker compose up --build
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# For some stupid reason, the python script can't resolve DNS unless we override what docker sets.
-echo "nameserver 8.8.8.8" > /etc/resolv.conf
+# ensure that the x11 directory exists so the server doesn't print any errors
+mkdir -p "/tmp/.X11-unix"
 
 # Clean up any existing X server lock files
 for i in {1..10}; do

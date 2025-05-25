@@ -1,8 +1,7 @@
 use std::{
-    io::{Read, Write},
-    sync::{
+    any, io::{Read, Write}, sync::{
         Arc, Mutex,
-    },
+    }
 };
 
 use crate::{
@@ -10,10 +9,12 @@ use crate::{
     queueing::{self, ResourceAllocator, ResourcePool},
     ssh,
 };
+
+use anyhow;
 use russh::{self, keys::PublicKeyBase64, server::Server};
 use tokio::sync::mpsc;
 
-const MAX_SIMULTANEOUS_SESSIONS: u32 = 10;
+const MAX_SIMULTANEOUS_SESSIONS: u32 = 1;
 
 pub struct MinecraftSshServer {
     x_server_pool: ResourcePool,
@@ -56,6 +57,7 @@ pub struct MinecraftClientSession {
     terminal_size: Arc<Mutex<crate::config::TerminalSize>>, // Store terminal size for resize events
     input_channel_tx: mpsc::UnboundedSender<Vec<u8>>,
     input_channel_rx: Arc<Mutex<mpsc::UnboundedReceiver<Vec<u8>>>>,
+    running: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Server for MinecraftSshServer {
@@ -78,6 +80,7 @@ impl Server for MinecraftSshServer {
             })),
             input_channel_tx,
             input_channel_rx: Arc::new(Mutex::new(input_channel_rx)),
+            running: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         }
     }
 
@@ -88,6 +91,8 @@ impl Server for MinecraftSshServer {
 
 impl MinecraftClientSession {
     fn cleanup_resources(&mut self) {
+        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+
         if self.my_request_id.is_some() && self.my_x_session.is_none() {
             // Currently no direct way to remove a pending request; can implement cancellation logic here later
         }
@@ -100,6 +105,14 @@ impl MinecraftClientSession {
         }
     }
 
+    fn set_terminal_size(&mut self, width: u32) -> anyhow::Result<()> {
+        let mut size = self.terminal_size.lock()
+            .map_err(|e| anyhow::anyhow!("Failed to lock terminal size mutex: {}", e))?;
+        size.target_width = width as usize;
+        size.target_height = crate::render::get_height_from_width(width as usize);
+        Ok(())
+    }
+
     pub async fn handle_session_background(
         self,
         mut status_rx: mpsc::UnboundedReceiver<queueing::ResourceStatus>,
@@ -107,11 +120,7 @@ impl MinecraftClientSession {
         session_handle: russh::server::Handle,
         channel_id: russh::ChannelId,
     ) {
-        let mut position_interval = tokio::time::interval(std::time::Duration::from_secs(3));
-
-        // Prepare terminal size Arc for resize events
-        // let terminal_size = Arc::new(Mutex::new(crate::config::TerminalSize { target_width: 20, target_height: 20 }));
-        // self.terminal_size = terminal_size.clone();
+        let mut queue_position_interval = tokio::time::interval(std::time::Duration::from_secs(3));
 
         loop {
             tokio::select! {
@@ -126,8 +135,6 @@ impl MinecraftClientSession {
                             let server_address = std::env::var("MINECRAFT_SERVER_ADDRESS").unwrap_or_else(|_| "".to_string());
                             let minecraft_config = minecraft::MinecraftConfig { xorg_display: format!(":{}", resource_id+1), username: username.clone(), server_address };
 
-                            // Shared running flag
-                            let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
                             // Output: send Minecraft output to SSH client
                             let output_channel = Arc::new(Mutex::new(SessionWriter::new(session_handle.clone(), channel_id)));
                             // Input: receive input from SSH client
@@ -137,7 +144,7 @@ impl MinecraftClientSession {
                             tokio::spawn(async move {
                                 minecraft::run(
                                     minecraft_config,
-                                    running.clone(),
+                                    self.running.clone(),
                                     output_channel,
                                     input_channel,
                                     self.terminal_size.clone(),
@@ -174,7 +181,7 @@ impl MinecraftClientSession {
                         }
                     }
                 },
-                _ = position_interval.tick() => {
+                _ = queue_position_interval.tick() => {
                     // No-op: status updates come from ResourceAllocator now
                 }
             }
@@ -185,6 +192,16 @@ impl MinecraftClientSession {
 impl russh::server::Handler for MinecraftClientSession {
     type Error = anyhow::Error;
 
+    async fn channel_close(
+            &mut self,
+            channel: russh::ChannelId,
+            session: &mut russh::server::Session,
+        ) -> Result<(), Self::Error> {
+        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+
+        Ok(())
+    }
+
     async fn channel_open_session(
         &mut self,
         channel: russh::Channel<russh::server::Msg>,
@@ -194,7 +211,7 @@ impl russh::server::Handler for MinecraftClientSession {
         let session_handle = session.handle().clone();
         let channel_id = channel.id();
 
-        // Spawn background task that handles resource allocation, queueing, and session lifecycle
+        // We have to run this as a background task because the channel won't work until this function returns.
         tokio::spawn(self.clone().handle_session_background(
             self.allocator.request_resource(),
             username,
@@ -235,17 +252,7 @@ impl russh::server::Handler for MinecraftClientSession {
         _modes: &[(russh::Pty, u32)],
         _session: &mut russh::server::Session,
     ) -> Result<(), Self::Error> {
-        // Update terminal size on PTY request
-        // if let Some(ref term_size) = self.terminal_size {
-
-        // TODO: set this using a function to deduplicate it with the code in window_change_request
-        let mut size = self.terminal_size.lock().unwrap();
-        size.target_width = col_width as usize;
-        size.target_height = crate::render::get_height_from_width(col_width as usize);
-        // } else {
-        //     println!("Can't set terminal size.");
-        // }
-        Ok(())
+        self.set_terminal_size(col_width)
     }
 
     async fn window_change_request(
@@ -257,15 +264,7 @@ impl russh::server::Handler for MinecraftClientSession {
         _pix_height: u32,
         _session: &mut russh::server::Session,
     ) -> Result<(), Self::Error> {
-        // Update terminal size on window change
-        // if let Some(ref term_size) = self.terminal_size {
-        let mut size = self.terminal_size.lock().unwrap();
-        size.target_width = col_width as usize;
-        size.target_height = crate::render::get_height_from_width(col_width as usize);
-        // } else {
-        //     println!("Can't set terminal size.");
-        // }
-        Ok(())
+        self.set_terminal_size(col_width)
     }
 
     async fn data(
@@ -277,7 +276,6 @@ impl russh::server::Handler for MinecraftClientSession {
         if let Err(e) = self.input_channel_tx.send(data.to_owned()) {
             eprintln!("Failed to send data: {}", e);
         }
-        // println!("Received data: {:?}", String::from_utf8_lossy(data));
         Ok(())
     }
 }
@@ -312,19 +310,22 @@ impl Write for SessionWriter {
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
-        // Note: This is a stub; in production, you may want to buffer or spawn a task
-        // let data = russh::CryptoVec::from_slice(self.&buffer);
-        // Ignore errors for now
-        futures::executor::block_on(
+        // Handle any errors from the SSH session
+        if let Err(e) = futures::executor::block_on(
             self.session_handle
-                .data(self.channel_id, self.buffer.clone().into()),
-        );
+                .data(self.channel_id, self.buffer.clone().into()), // This is the actual write
+        ) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("SSH session error: {:?}", e),
+            ));
+        }
         self.buffer.clear();
         Ok(())
     }
 }
 
-// Stub for SessionReader - to be implemented
+// There's probably a cleaner way to do this without the SessionReader struct, but this works for now.
 struct SessionReader {
     buffer: Arc<Mutex<mpsc::UnboundedReceiver<Vec<u8>>>>,
 }
@@ -339,10 +340,8 @@ impl Read for SessionReader {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         // Lock the receiver for exclusive access
         let mut receiver = self.buffer.lock().unwrap();
-        // println!("Reading from input channel");
         match receiver.try_recv() {
             Ok(data) => {
-                // println!("Read data from input channel: {:?}", String::from_utf8_lossy(&data));
                 let to_copy = std::cmp::min(buf.len(), data.len());
                 buf[..to_copy].copy_from_slice(&data[..to_copy]);
                 Ok(to_copy)

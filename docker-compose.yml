@@ -1,25 +1,27 @@
-version: '3'
-
 services:
   minecraft-client:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: minecraft-terminal
+    networks:
+      - minecraft-network  # Add to custom network
     ports:
-      - "9867:2222"  # SSH port for connecting to the Minecraft terminal viewer
+      - "9867:2222"
     volumes:
       - ./.minecraft:/root/.minecraft
     environment:
-      - MINECRAFT_SERVER_ADDRESS=172.17.0.1 #${MINECRAFT_SERVER_ADDRESS:-minecraft-server}
+      - MINECRAFT_SERVER_ADDRESS=minecraft-server  # Use service name directly
     depends_on:
       - minecraft-server
 
   minecraft-server:
     image: itzg/minecraft-server
     container_name: minecraft-server
+    networks:
+      - minecraft-network  # Add to custom network
     ports:
-      - "25565:25565"  # Minecraft server port
+      - "25565:25565"
     environment:
       - EULA=TRUE
       - TYPE=PAPER
@@ -34,3 +36,7 @@ services:
     tty: true
     stdin_open: true
     restart: unless-stopped
+
+networks:
+  minecraft-network:
+    driver: bridge
