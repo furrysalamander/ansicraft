@@ -221,13 +221,13 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
             running_render,
         )
     }));
-    children.push(thread::spawn(move || {
+    children.push(thread::Builder::new().name("render_thread".to_owned()).spawn(move || {
         display_render_thread(completed_frames_rx, output_channel)
-    }));
-    children.push(thread::spawn(move || {
+    })?);
+    children.push(thread::Builder::new().name("input_capture".to_owned()).spawn(move || {
         xdo::capture_input(input_channel, input_event_tx, running_input)
-    }));
-    children.push(thread::spawn(move || {
+    })?);
+    children.push(thread::Builder::new().name("input_forwarding".to_owned()).spawn(move || {
         xdo::forward_input_to_minecraft(
             input_event_rx,
             terminal_size_forward,
@@ -235,10 +235,11 @@ pub fn run<Writer: std::io::Write + Send + 'static, Reader: std::io::Read + Send
             display_for_forward,
             config.server_address == "",
         )
-    }));
+    })?);
 
     for child in children {
         // Wait for the thread to finish. Returns a result.
+        println!("waiting for {:?} to finish...", child.thread());
         let _ = child.join();
     }
 
