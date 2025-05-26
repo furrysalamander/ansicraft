@@ -14,7 +14,7 @@ use rand_core::OsRng;
 use russh::{self, keys::{ssh_key, PublicKeyBase64}, server::Server};
 use tokio::sync::mpsc;
 
-const MAX_SIMULTANEOUS_SESSIONS: u32 = 1;
+const MAX_SIMULTANEOUS_SESSIONS: u32 = 10;
 
 // Function to load or create SSH key
 pub fn load_or_create_ssh_key() -> russh::keys::PrivateKey {
