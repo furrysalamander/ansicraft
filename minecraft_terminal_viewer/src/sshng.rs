@@ -1,5 +1,5 @@
 use std::{
-    any, io::{Read, Write}, sync::{
+    io::{Read, Write}, path::Path, sync::{
         Arc, Mutex,
     }
 };
@@ -7,14 +7,45 @@ use std::{
 use crate::{
     minecraft,
     queueing::{self, ResourceAllocator, ResourcePool},
-    ssh,
 };
 
 use anyhow;
-use russh::{self, keys::PublicKeyBase64, server::Server};
+use rand_core::OsRng;
+use russh::{self, keys::{ssh_key, PublicKeyBase64}, server::Server};
 use tokio::sync::mpsc;
 
 const MAX_SIMULTANEOUS_SESSIONS: u32 = 1;
+
+// Function to load or create SSH key
+pub fn load_or_create_ssh_key() -> russh::keys::PrivateKey {
+    // Honestly, maybe errors in this function should result in a panic.
+    let key_path = Path::new("ssh_server_key");
+
+    // Try to load existing key
+    if key_path.exists() {
+        match russh::keys::load_secret_key(key_path, None) {
+            Ok(key) => {
+                println!("Loaded existing SSH key");
+                return key;
+            }
+            Err(e) => {
+                eprintln!("Error loading SSH key: {:?}, generating new one", e);
+            }
+        }
+    }
+    // Generate and save new key if loading failed
+    let key = russh::keys::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap();
+
+    match key.write_openssh_file(key_path, ssh_key::LineEnding::LF) {
+        Ok(()) => {
+            println!("Generated new SSH key");
+        }
+        Err(e) => {
+            eprintln!("Error saving SSH key: {:?}", e);
+        }
+    }
+    return key;
+}
 
 pub struct MinecraftSshServer {
     x_server_pool: ResourcePool,
@@ -35,7 +66,7 @@ impl MinecraftSshServer {
             inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
             auth_rejection_time: std::time::Duration::from_secs(0),
             auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
-            keys: vec![ssh::load_or_create_ssh_key()],
+            keys: vec![load_or_create_ssh_key()],
             nodelay: true,
             channel_buffer_size: 1,
             methods: authentication_methods,
@@ -194,8 +225,8 @@ impl russh::server::Handler for MinecraftClientSession {
 
     async fn channel_close(
             &mut self,
-            channel: russh::ChannelId,
-            session: &mut russh::server::Session,
+            _channel: russh::ChannelId,
+            _session: &mut russh::server::Session,
         ) -> Result<(), Self::Error> {
         self.running.store(false, std::sync::atomic::Ordering::SeqCst);
 
