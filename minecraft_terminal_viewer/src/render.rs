@@ -117,6 +117,7 @@ pub fn render_x11_window(
             last_width = target_width;
             last_height = target_height;
         }
+        thread::sleep(std::time::Duration::from_millis(50));
     }
 
     // Ensure the current process is killed
