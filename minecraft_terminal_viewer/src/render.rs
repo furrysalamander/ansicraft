@@ -279,7 +279,7 @@ fn render_byte_stream<R: Read + AsRawFd>(
             // Copy the latest frame to our frame data buffer
             frame_data.copy_from_slice(&latest_frame);
 
-            let mut output = frame_to_256_ansi(&frame_data, height, width, offset_x, offset_y);
+            let mut output = frame_to_rgb_ansi(&frame_data, height, width, offset_x, offset_y);
 
             // Reset colors
             output.push_str("\x1b[m");
