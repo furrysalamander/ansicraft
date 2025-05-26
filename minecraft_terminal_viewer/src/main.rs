@@ -1,9 +1,7 @@
-// filepath: /home/mike/source/docker-minecraft-rtsp/minecraft_terminal_viewer/src/main.rs
 mod config;
 mod minecraft;
 mod queueing;
 mod render;
-mod ssh;
 mod sshng;
 mod xdo;
 
