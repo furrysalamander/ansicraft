@@ -11,7 +11,7 @@ use crate::{
 
 use anyhow;
 use rand_core::OsRng;
-use russh::{self, keys::{ssh_key, PublicKeyBase64}, server::Server};
+use russh::{self, keys::{ssh_key::{self, public}, PublicKeyBase64}, server::Server};
 use tokio::sync::mpsc;
 
 const MAX_SIMULTANEOUS_SESSIONS: u32 = 10;
@@ -259,7 +259,9 @@ impl russh::server::Handler for MinecraftClientSession {
         public_key: &russh::keys::ssh_key::PublicKey,
     ) -> Result<russh::server::Auth, Self::Error> {
         // Use first 12 characters of base64 public key as username for now
-        self.username = public_key.public_key_base64();
+        let public_key = public_key
+            .public_key_base64();
+        self.username = sha256::digest(public_key);
         self.username.truncate(12);
 
         Ok(russh::server::Auth::Accept)
