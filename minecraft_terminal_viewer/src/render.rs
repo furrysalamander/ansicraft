@@ -128,6 +128,88 @@ pub fn render_x11_window(
     Ok(())
 }
 
+// Function to convert RGB to ANSI 256-color palette index
+fn rgb_to_ansi_256(r: u8, g: u8, b: u8) -> u8 {
+    // Check if this is a grayscale color
+    if r == g && g == b {
+        if r < 8 {
+            return 16; // Near black
+        }
+        if r > 248 {
+            return 231; // Near white
+        }
+        // Use grayscale ramp (232-255)
+        return 232 + ((r - 8) / 10);
+    }
+    
+    // Convert to 6×6×6 color cube (colors 16-231)
+    let r_index = (r as f32 / 255.0 * 5.0).round() as u8;
+    let g_index = (g as f32 / 255.0 * 5.0).round() as u8;
+    let b_index = (b as f32 / 255.0 * 5.0).round() as u8;
+    
+    16 + 36 * r_index + 6 * g_index + b_index
+}
+
+fn frame_to_rgb_ansi(frame_data: &Vec<u8>, height: usize, width: usize, offset_x: usize, offset_y: usize) -> String {
+    let mut output = String::with_capacity(13 + (height / 2) * (width * 41 + 8));
+    output.push_str(&format!("\x1b[{};{}H", offset_y + 1, offset_x + 1));
+
+    // Render the frame (iterate two rows per character)
+    for row_index in (0..height).step_by(2) {
+        for column_index in 0..width {
+            let top_pixel_start = ((row_index * width) + column_index) * 3;
+            let bottom_pixel_start = (((row_index + 1) * width) + column_index) * 3;
+
+            output.push_str(&format!(
+                "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m▄",
+                frame_data[top_pixel_start],
+                frame_data[top_pixel_start + 1],
+                frame_data[top_pixel_start + 2],
+                frame_data[bottom_pixel_start],
+                frame_data[bottom_pixel_start + 1],
+                frame_data[bottom_pixel_start + 2],
+            ));
+        }
+        output.push_str(&format!("\x1b[B\x1b[{}D", width));
+    }
+    return output;
+}
+
+fn frame_to_256_ansi(frame_data: &Vec<u8>, height: usize, width: usize, offset_x: usize, offset_y: usize) -> String {
+    let mut output = String::with_capacity(13 + (height / 2) * (width * 18 + 8));
+    output.push_str(&format!("\x1b[{};{}H", offset_y + 1, offset_x + 1));
+
+    // Render the frame in ANSI art style (use half-blocks to maintain density)
+    for row_index in (0..height).step_by(2) {
+        for column_index in 0..width {
+            let top_pixel_start = ((row_index * width) + column_index) * 3;
+            let bottom_pixel_start = (((row_index + 1).min(height - 1) * width) + column_index) * 3;
+
+            // Get RGB values for top and bottom pixels
+            let r1 = frame_data[top_pixel_start];
+            let g1 = frame_data[top_pixel_start + 1];
+            let b1 = frame_data[top_pixel_start + 2];
+            
+            let r2 = frame_data[bottom_pixel_start];
+            let g2 = frame_data[bottom_pixel_start + 1];
+            let b2 = frame_data[bottom_pixel_start + 2];
+            
+            // Convert RGB to 256-color palette indices
+            let bg_color = rgb_to_ansi_256(r1, g1, b1);
+            let fg_color = rgb_to_ansi_256(r2, g2, b2);
+            
+            // Use 256-color ANSI escape sequences
+            output.push_str(&format!(
+                "\x1b[48;5;{}m\x1b[38;5;{}m▄",
+                bg_color,
+                fg_color,
+            ));
+        }
+        output.push_str(&format!("\x1b[B\x1b[{}D", width));
+    }
+    return output;
+}
+
 // Renders an arbitrary bytes buffer to the terminal using non-blocking I/O
 fn render_byte_stream<R: Read + AsRawFd>(
     mut buffer: R,
@@ -197,28 +279,7 @@ fn render_byte_stream<R: Read + AsRawFd>(
             // Copy the latest frame to our frame data buffer
             frame_data.copy_from_slice(&latest_frame);
 
-            // Build the output escape sequence
-            let mut output = String::with_capacity(13 + (height / 2) * (width * 41 + 8));
-            output.push_str(&format!("\x1b[{};{}H", offset_y + 1, offset_x + 1));
-
-            // Render the frame (iterate two rows per character)
-            for row_index in (0..height).step_by(2) {
-                for column_index in 0..width {
-                    let top_pixel_start = ((row_index * width) + column_index) * 3;
-                    let bottom_pixel_start = (((row_index + 1) * width) + column_index) * 3;
-
-                    output.push_str(&format!(
-                        "\x1b[48;2;{};{};{}m\x1b[38;2;{};{};{}m▄",
-                        frame_data[top_pixel_start],
-                        frame_data[top_pixel_start + 1],
-                        frame_data[top_pixel_start + 2],
-                        frame_data[bottom_pixel_start],
-                        frame_data[bottom_pixel_start + 1],
-                        frame_data[bottom_pixel_start + 2],
-                    ));
-                }
-                output.push_str(&format!("\x1b[B\x1b[{}D", width));
-            }
+            let mut output = frame_to_256_ansi(&frame_data, height, width, offset_x, offset_y);
 
             // Reset colors
             output.push_str("\x1b[m");
