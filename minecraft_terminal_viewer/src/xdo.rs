@@ -15,12 +15,11 @@ pub fn capture_input<Reader: io::Read + Send + 'static>(
     input_tx: mpsc::Sender<InputEvent>,
     running: Arc<AtomicBool>,
 ) -> io::Result<()> {
-    // let (bytes_tx, bytes_rx) = mpsc::channel::<Vec<u8>>();
 
     let mut reader = input_channel.lock().expect("Failed to lock mutex");
     let mut parser: InputParser = InputParser::new();
     while running.load(Ordering::SeqCst) {
-        let mut buf = [0u8; 32];
+        let mut buf = [0u8; 64];
         match reader.read(&mut buf) {
             Ok(0) => break,
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
