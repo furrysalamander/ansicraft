@@ -31,6 +31,7 @@ services:
       - ENABLE_WHITELIST=false
       - ONLINE_MODE=false
       - ALLOW_NETHER=true
+      - VERSION="1.21.4"
     volumes:
       - ./minecraft_server_data:/data
     tty: true

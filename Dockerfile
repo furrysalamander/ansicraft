@@ -1,5 +1,5 @@
 # Build stage
-FROM debian:sid-slim AS builder
+FROM debian:trixie-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -27,7 +27,7 @@ COPY minecraft_terminal_viewer/src ./src
 RUN cargo clean --release --package minecraft_terminal_viewer && cargo build --release
 
 # Runtime stage
-FROM debian:sid-slim
+FROM debian:trixie-slim
 
 # Install runtime dependencies only
 RUN apt-get update && apt-get install -y --no-install-recommends \
