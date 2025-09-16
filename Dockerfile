@@ -12,7 +12,7 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Create a new empty project
 WORKDIR /root/minecraft_terminal_viewer
 # First, copy just the Cargo files
-COPY minecraft_terminal_viewer/Cargo.toml minecraft_terminal_viewer/Cargo.lock ./
+COPY minecraft_terminal_viewer/Cargo.toml ./
 
 # Create a dummy main.rs to build dependencies
 RUN mkdir -p src && \
