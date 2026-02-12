@@ -6,7 +6,7 @@ async fn test_device_service_reqwest() {
     // 1. Start the Server in a background task
     let port = 8081; // Use a different port to avoid conflicts
     tokio::spawn(async move {
-        onvif_mc2::run(port, false).await;
+        onvif_camera::run(port, false).await;
     });
 
     // Give it a moment to start
@@ -39,8 +39,8 @@ async fn test_device_service_reqwest() {
     let text = resp.text().await.expect("Failed to get response text");
     println!("GetDeviceInformation Response: {}", text);
 
-    assert!(text.contains("MockModelX1"));
-    assert!(text.contains("MockCameraFactory"));
+    assert!(text.contains("MC-X1"));
+    assert!(text.contains("MinecraftCameraFactory"));
 
     // 3. Test GetSystemDateAndTime
     let soap_request_date = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -104,10 +104,9 @@ async fn test_device_service_reqwest() {
         .expect("Failed to send GetStreamUri");
     let text = resp.text().await.unwrap();
     println!("GetStreamUri Response: {}", text);
-    // Expect proxy URL components
-    assert!(text.contains("127.0.0.1:8554"));
-    assert!(text.contains("app-8F9K44lJ"));
+    // Expect RTSP URL based on environment variables (defaults: HOST_IP=127.0.0.1, RTSP_PORT=554)
     assert!(text.contains("rtsp://"));
+    assert!(text.contains("127.0.0.1:554/stream"));
 
     // 6. Test PTZ GetConfigurations
     let ptz_url = format!("http://127.0.0.1:{}/onvif/ptz_service", port);

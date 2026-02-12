@@ -9,4 +9,4 @@ pub mod render;
 pub mod xdo;
 
 // Re-export key types for convenience
-pub use minecraft::{MinecraftConfig, run};
+pub use minecraft::{MinecraftConfig, run, launch_minecraft};

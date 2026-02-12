@@ -1,0 +1,128 @@
+services:
+  minecraft-server:
+    image: itzg/minecraft-server
+    environment:
+      - EULA=TRUE
+      - TYPE=PAPER
+      - VERSION=1.21.6
+      - GAMEMODE=creative
+      - ENABLE_RCON=true
+      - RCON_PASSWORD=minecraft
+      - RCON_PORT=25575
+      - DIFFICULTY=peaceful
+      - MAX_PLAYERS=20
+      - VIEW_DISTANCE=10
+    ports:
+      - "25565:25565"
+      - "25575:25575"
+    volumes:
+      - minecraft-server-data:/data
+    networks:
+      camera-net:
+        ipv4_address: 172.28.0.2
+
+  camera-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.onvif
+    environment:
+      - USERNAME=camera1_player
+      - HOST_IP=172.28.0.101
+      - MINECRAFT_SERVER=172.28.0.2:25565
+      - MINECRAFT_VERSION=1.21.6
+      - RCON_HOST=172.28.0.2
+      - RCON_PORT=25575
+      - RCON_PASSWORD=minecraft
+      - SPAWN_X=0
+      - SPAWN_Y=70
+      - SPAWN_Z=0
+      - DEVICE_NAME=Minecraft Camera 1
+      - DEVICE_UUID=camera-1-uuid-001
+      - ONVIF_PORT=8080
+      - RTSP_PORT=554
+      - VIDEO_WIDTH=320
+      - VIDEO_HEIGHT=200
+      - FRAMERATE=30
+    ports:
+      - "8081:8080"  # ONVIF
+      - "5541:554"   # RTSP
+    networks:
+      camera-net:
+        ipv4_address: 172.28.0.101
+    depends_on:
+      - minecraft-server
+    privileged: true  # For X server
+
+  camera-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.onvif
+    environment:
+      - USERNAME=camera2_player
+      - HOST_IP=172.28.0.102
+      - MINECRAFT_SERVER=172.28.0.2:25565
+      - MINECRAFT_VERSION=1.21.6
+      - RCON_HOST=172.28.0.2
+      - RCON_PORT=25575
+      - RCON_PASSWORD=minecraft
+      - SPAWN_X=100
+      - SPAWN_Y=70
+      - SPAWN_Z=100
+      - DEVICE_NAME=Minecraft Camera 2
+      - DEVICE_UUID=camera-2-uuid-002
+      - ONVIF_PORT=8080
+      - RTSP_PORT=554
+      - VIDEO_WIDTH=320
+      - VIDEO_HEIGHT=200
+      - FRAMERATE=30
+    ports:
+      - "8082:8080"  # ONVIF
+      - "5542:554"   # RTSP
+    networks:
+      camera-net:
+        ipv4_address: 172.28.0.102
+    depends_on:
+      - minecraft-server
+    privileged: true
+
+  camera-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.onvif
+    environment:
+      - USERNAME=camera3_player
+      - HOST_IP=172.28.0.103
+      - MINECRAFT_SERVER=172.28.0.2:25565
+      - MINECRAFT_VERSION=1.21.6
+      - RCON_HOST=172.28.0.2
+      - RCON_PORT=25575
+      - RCON_PASSWORD=minecraft
+      - SPAWN_X=-100
+      - SPAWN_Y=70
+      - SPAWN_Z=-100
+      - DEVICE_NAME=Minecraft Camera 3
+      - DEVICE_UUID=camera-3-uuid-003
+      - ONVIF_PORT=8080
+      - RTSP_PORT=554
+      - VIDEO_WIDTH=320
+      - VIDEO_HEIGHT=200
+      - FRAMERATE=30
+    ports:
+      - "8083:8080"  # ONVIF
+      - "5543:554"   # RTSP
+    networks:
+      camera-net:
+        ipv4_address: 172.28.0.103
+    depends_on:
+      - minecraft-server
+    privileged: true
+
+networks:
+  camera-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  minecraft-server-data:

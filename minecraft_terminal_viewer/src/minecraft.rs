@@ -67,6 +67,14 @@ fn display_render_thread<Writer: std::io::Write + Send + 'static>(
     Ok(())
 }
 
+/// Launch Minecraft without terminal rendering (for ONVIF/RTSP use)
+/// Returns Arc<AtomicBool> to control the running state
+pub fn launch_minecraft(config: MinecraftConfig) -> io::Result<Arc<AtomicBool>> {
+    let running = Arc::new(AtomicBool::new(true));
+    run_minecraft(config, running.clone())?;
+    Ok(running)
+}
+
 fn run_minecraft(config: MinecraftConfig, running: Arc<AtomicBool>) -> io::Result<()> {
     use std::process::Command;
 

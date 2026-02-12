@@ -5,6 +5,7 @@
 pub mod discovery;
 pub mod models;
 pub mod ptz_controller;
+pub mod rcon_client;
 pub mod services;
 pub mod soap;
 

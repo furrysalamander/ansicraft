@@ -1,0 +1,81 @@
+# Build stage
+FROM debian:trixie-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential pkg-config libssl-dev curl
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Create workspace
+WORKDIR /root/ansicraft
+
+# Copy Cargo files for both crates
+COPY minecraft_terminal_viewer/Cargo.toml minecraft_terminal_viewer/
+COPY onvif_camera/Cargo.toml onvif_camera/
+
+# Create dummy source files to cache dependencies
+RUN mkdir -p minecraft_terminal_viewer/src && \
+    echo "pub fn dummy() {}" > minecraft_terminal_viewer/src/lib.rs && \
+    echo "fn main() {}" > minecraft_terminal_viewer/src/main.rs && \
+    mkdir -p onvif_camera/src && \
+    echo "pub fn dummy() {}" > onvif_camera/src/lib.rs && \
+    echo "fn main() {}" > onvif_camera/src/main.rs && \
+    cd onvif_camera && cargo build --release && cd .. && \
+    rm -rf minecraft_terminal_viewer/src onvif_camera/src
+
+# Copy actual source code
+COPY minecraft_terminal_viewer/src minecraft_terminal_viewer/src
+COPY onvif_camera/src onvif_camera/src
+
+# Build the ONVIF camera application
+RUN cd onvif_camera && \
+    cargo clean --release --package onvif_camera && \
+    cargo build --release
+
+# Runtime stage
+FROM debian:trixie-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xserver-xorg-core \
+    xserver-xorg-video-dummy \
+    x11-xserver-utils \
+    openjdk-21-jre \
+    ffmpeg xdotool git python3 python3-pip \
+    wget ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install minecraft-launcher-lib
+RUN pip3 install --break-system-packages minecraft-launcher-lib
+
+# Install go2rtc
+RUN wget -O /usr/local/bin/go2rtc https://github.com/AlexxIT/go2rtc/releases/download/v1.9.7/go2rtc_linux_amd64 && \
+    chmod +x /usr/local/bin/go2rtc
+
+# Create Minecraft directory
+WORKDIR /root/.minecraft
+RUN mkdir -p /root/.minecraft
+
+# Add xorg.conf
+COPY xorg.conf /etc/X11/xorg.conf
+
+# Copy built binary from builder stage
+COPY --from=builder /root/ansicraft/onvif_camera/target/release/onvif_camera /usr/local/bin/onvif_camera
+
+# Copy launcher script
+COPY launch_minecraft.py /root/launch_minecraft.py
+
+# Copy go2rtc config
+COPY go2rtc.yaml /root/go2rtc.yaml
+
+# Copy blank cursor
+COPY blank_cursor.xbm /root/blank_cursor.xbm
+
+# Add entrypoint
+COPY --chmod=0755 entrypoint-onvif.sh /root/entrypoint-onvif.sh
+
+ENTRYPOINT ["/root/entrypoint-onvif.sh"]
