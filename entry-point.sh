@@ -21,5 +21,8 @@ for i in {1..10}; do
     DISPLAY=:$i xsetroot -cursor /root/blank_cursor.xbm /root/blank_cursor.xbm || true
 done
 
+# Initialize fresh go2rtc config from base
+cp /config/go2rtc.base.yaml /config/go2rtc.yaml
+
 # Start terminal viewer
 RUST_BACKTRACE=full /root/termcast

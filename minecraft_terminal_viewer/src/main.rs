@@ -1,11 +1,15 @@
 mod config;
+mod http_api;
 mod minecraft;
 mod queueing;
 mod render;
+mod rtsp_session;
+mod session_manager;
 mod sshng;
 mod xdo;
 
 use config::TerminalSize;
+use session_manager::SessionManager;
 use termwiz::terminal::Terminal;
 
 use std::io;
@@ -19,6 +23,8 @@ use crossterm::{
     execute,
     terminal::{self, Clear, ClearType},
 };
+
+const MAX_RTSP_SESSIONS: u32 = 10;
 
 // Function to clean up terminal state
 pub fn cleanup_terminal() -> io::Result<()> {
@@ -38,13 +44,60 @@ pub fn cleanup_terminal() -> io::Result<()> {
 async fn main() -> anyhow::Result<()> {
     let stdin = io::stdin();
 
+    // Start the HTTP API server for RTSP session management
+    let session_manager = Arc::new(tokio::sync::Mutex::new(SessionManager::new(MAX_RTSP_SESSIONS)));
+
+    // Try to start go2rtc (if available)
+    match rtsp_session::spawn_go2rtc() {
+        Ok(child) => {
+            println!("go2rtc started successfully (PID: {})", child.id());
+            // Wait for go2rtc to be ready before accepting sessions
+            println!("Waiting for go2rtc to be ready...");
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            // Verify go2rtc is responding
+            let client = reqwest::Client::new();
+            for i in 1..=5 {
+                match client.get("http://localhost:1984/api/streams").send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!("go2rtc is ready (attempt {})", i);
+                        break;
+                    }
+                    _ => {
+                        if i < 5 {
+                            println!("go2rtc not ready yet, retrying... (attempt {})", i);
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        } else {
+                            println!("go2rtc may not be fully ready, continuing anyway");
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("go2rtc not available or failed to start: {}", e);
+            println!("RTSP streaming will not be available without go2rtc");
+        }
+    }
+
+    // Start HTTP API in background
+    let http_manager = Arc::clone(&session_manager);
+    let http_port = std::env::var("HTTP_API_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8080);
+
+    tokio::spawn(async move {
+        http_api::run(http_manager, http_port).await;
+    });
+
     // Indicate that the user is prompted for input, if this is a terminal.
     if !stdin.is_terminal() {
-        // let mut server = ssh::MinecraftClientServer::new();
+        // SSH server mode
         let mut server = sshng::MinecraftSshServer::new();
         server.run().await
     } else {
-        // Clear the terminal
+        // Interactive mode (local terminal)
         let mut stdout = io::stdout();
         execute!(
             stdout,
@@ -96,22 +149,6 @@ async fn main() -> anyhow::Result<()> {
             stdin_arc,
             terminal_size,
         )?;
-
-        // crossterm::execute!(
-        //     output_channel,
-        //     event::EnableMouseCapture,
-        //     event::EnableFocusChange,
-        //     terminal::EnterAlternateScreen,
-        //     cursor::Hide
-        // );
-
-        // crossterm::execute!(
-        //     output_channel,
-        //     event::DisableMouseCapture,
-        //     event::DisableFocusChange,
-        //     terminal::LeaveAlternateScreen,
-        //     cursor::Show,
-        // );
 
         cleanup_terminal()?;
         Ok(())

@@ -1,0 +1,10 @@
+api:
+  listen: ":1984"
+
+rtsp:
+  listen: ":8554"
+
+streams:
+  teststream: exec:echo test
+
+# Streams are registered dynamically when Minecraft starts

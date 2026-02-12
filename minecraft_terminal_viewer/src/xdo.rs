@@ -273,3 +273,67 @@ pub fn forward_input_to_minecraft(
     }
     Ok(())
 }
+
+// ============================================================================
+// Public input functions for HTTP API
+// ============================================================================
+
+fn run_xdotool_pub(args: &[&str], display: &str) {
+    use std::os::unix::process::ExitStatusExt;
+
+    Command::new("xdotool")
+        .args(args)
+        .env("DISPLAY", display)
+        .status()
+        .unwrap_or_else(|e| {
+            eprintln!("Error running xdotool: {}", e);
+            std::process::ExitStatus::from_raw(1)
+        });
+}
+
+/// Send relative mouse movement
+pub fn send_relative_mouse(display: &str, dx: i32, dy: i32) {
+    if dx != 0 || dy != 0 {
+        run_xdotool_pub(
+            &["mousemove_relative", "--", &dx.to_string(), &dy.to_string()],
+            display,
+        );
+    }
+}
+
+/// Send absolute mouse movement
+pub fn send_absolute_mouse(display: &str, x: i32, y: i32) {
+    run_xdotool_pub(&["mousemove", &x.to_string(), &y.to_string()], display);
+}
+
+/// Send key press or release
+pub fn send_key(display: &str, code: &str, pressed: bool) {
+    let action = if pressed { "keydown" } else { "keyup" };
+    run_xdotool_pub(&[action, code], display);
+}
+
+/// Send scroll wheel event
+pub fn send_scroll(display: &str, delta: i32) {
+    // Positive delta = scroll up (button 4), negative = scroll down (button 5)
+    let button = if delta > 0 { "4" } else { "5" };
+    let count = delta.abs();
+    for _ in 0..count {
+        run_xdotool_pub(&["click", button], display);
+    }
+}
+
+/// Send mouse button click
+pub fn send_click(display: &str, button: u8) {
+    // 1=left, 2=middle, 3=right
+    run_xdotool_pub(&["click", &button.to_string()], display);
+}
+
+/// Send mouse button down
+pub fn send_mouse_down(display: &str, button: u8) {
+    run_xdotool_pub(&["mousedown", &button.to_string()], display);
+}
+
+/// Send mouse button up
+pub fn send_mouse_up(display: &str, button: u8) {
+    run_xdotool_pub(&["mouseup", &button.to_string()], display);
+}

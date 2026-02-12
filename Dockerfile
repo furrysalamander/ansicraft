@@ -36,8 +36,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-xserver-utils \
     openjdk-21-jre \
     ffmpeg xdotool git python3 python3-pip \
+    curl ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Install go2rtc for RTSP streaming
+RUN curl -L -o /usr/local/bin/go2rtc \
+    https://github.com/AlexxIT/go2rtc/releases/download/v1.9.4/go2rtc_linux_amd64 \
+    && chmod +x /usr/local/bin/go2rtc
 
 # Install minecraft-launcher-lib
 RUN pip3 install --break-system-packages minecraft-launcher-lib

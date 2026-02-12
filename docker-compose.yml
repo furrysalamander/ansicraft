@@ -1,25 +1,35 @@
 services:
+  # ============ Core Services ============
+
+  # Ansicraft - Minecraft terminal viewer with HTTP API and RTSP streaming
   minecraft-client:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: minecraft-terminal
+    container_name: ansicraft
     networks:
-      - minecraft-network  # Add to custom network
+      - minecraft-network
     ports:
-      - "9867:2222"
+      - "9867:2222"    # SSH (existing functionality)
+      - "8080:8080"    # HTTP API for session management
+      - "8554:8554"    # Central go2rtc RTSP
+      - "1984:1984"    # go2rtc API
     volumes:
       - ./.minecraft:/root/.minecraft
+      - ./go2rtc/go2rtc.yaml:/config/go2rtc.base.yaml:ro
     environment:
-      - MINECRAFT_SERVER_ADDRESS=minecraft-server  # Use service name directly
+      - MINECRAFT_SERVER_ADDRESS=minecraft-server
+      - HTTP_API_PORT=8080
+      - GO2RTC_CONFIG=/config/go2rtc.yaml
     depends_on:
       - minecraft-server
 
+  # Minecraft server
   minecraft-server:
     image: itzg/minecraft-server
     container_name: minecraft-server
     networks:
-      - minecraft-network  # Add to custom network
+      - minecraft-network
     ports:
       - "25565:25565"
     environment:
@@ -31,13 +41,82 @@ services:
       - ENABLE_WHITELIST=false
       - ONLINE_MODE=false
       - ALLOW_NETHER=true
-      - VERSION="1.21.4"
+      - VERSION=1.21.4
+      - GAMEMODE=creative
     volumes:
       - ./minecraft_server_data:/data
     tty: true
     stdin_open: true
     restart: unless-stopped
 
+  # ============ Camera Pods ============
+  # Each camera has: onvif-mc2 (ONVIF service) + local go2rtc (RTSP server)
+  # Enable these with: docker-compose --profile cameras up
+
+  camera-1:
+    build:
+      context: ./onvif-mc2
+      dockerfile: Dockerfile
+    container_name: camera-1
+    profiles:
+      - cameras
+    depends_on:
+      - minecraft-client
+    environment:
+      - SESSION_ID=camera-1
+      - HOST_IP=${CAMERA_1_IP:-172.28.0.101}
+      - ANSICRAFT_URL=http://ansicraft:8080
+      - USERNAME=camera1_player
+    networks:
+      minecraft-network:
+      cameras:
+        ipv4_address: ${CAMERA_1_IP:-172.28.0.101}
+
+  camera-2:
+    build:
+      context: ./onvif-mc2
+      dockerfile: Dockerfile
+    container_name: camera-2
+    profiles:
+      - cameras
+    depends_on:
+      - minecraft-client
+    environment:
+      - SESSION_ID=camera-2
+      - HOST_IP=${CAMERA_2_IP:-172.28.0.102}
+      - ANSICRAFT_URL=http://ansicraft:8080
+      - USERNAME=camera2_player
+    networks:
+      minecraft-network:
+      cameras:
+        ipv4_address: ${CAMERA_2_IP:-172.28.0.102}
+
+  camera-3:
+    build:
+      context: ./onvif-mc2
+      dockerfile: Dockerfile
+    container_name: camera-3
+    profiles:
+      - cameras
+    depends_on:
+      - minecraft-client
+    environment:
+      - SESSION_ID=camera-3
+      - HOST_IP=${CAMERA_3_IP:-172.28.0.103}
+      - ANSICRAFT_URL=http://ansicraft:8080
+      - USERNAME=camera3_player
+    networks:
+      minecraft-network:
+      cameras:
+        ipv4_address: ${CAMERA_3_IP:-172.28.0.103}
+
 networks:
   minecraft-network:
     driver: bridge
+
+  # Bridge network for camera pods with static IPs
+  cameras:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
