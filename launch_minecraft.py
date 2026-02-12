@@ -60,7 +60,7 @@ def parse_arguments():
     return parser.parse_args()
 
 # Minecraft version to use
-minecraft_version = "1.21.4"
+minecraft_version = "1.21.6"
 # Directory for minecraft
 minecraft_directory = "/root/.minecraft"
 # Simply Optimized Pack
