@@ -3,6 +3,7 @@
 /minecraft_terminal_viewer/Cargo.lock
 /minecraft_terminal_viewer/debug/
 /minecraft_terminal_viewer/release/
+/onvif-mc2/target/
 **/*.rs.bk
 
 # Go build artifacts

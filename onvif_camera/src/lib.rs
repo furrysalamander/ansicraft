@@ -48,7 +48,14 @@ pub async fn run(port: u16, verbose: bool) {
 
     let addr: SocketAddr = ([0, 0, 0, 0], port).into();
 
-    // TODO: Also start WS-Discovery service
+    // Start WS-Discovery service in the background
+    let device_uuid = std::env::var("DEVICE_UUID").unwrap_or_else(|_| "00000000-0000-0000-0000-000000000000".to_string());
+    let discovery_port = port;
+    let discovery_uuid = device_uuid.clone();
+    
+    tokio::spawn(async move {
+        discovery::run_discovery_service(discovery_port, discovery_uuid).await;
+    });
 
     warp::serve(routes).run(addr).await;
 }

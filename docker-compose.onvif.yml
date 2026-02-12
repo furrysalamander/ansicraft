@@ -35,8 +35,6 @@ services:
     entrypoint: ["python3", "/root/launch_minecraft.py", "--download-only"]
     volumes:
       - minecraft-client-cache:/root/.minecraft
-    networks:
-      camera-net:
 
   camera-1:
     build:
