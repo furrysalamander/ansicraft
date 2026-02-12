@@ -12,6 +12,7 @@ services:
       - DIFFICULTY=peaceful
       - MAX_PLAYERS=20
       - VIEW_DISTANCE=10
+      - ONLINE_MODE=false
     ports:
       - "25565:25565"
       - "25575:25575"
@@ -20,6 +21,22 @@ services:
     networks:
       camera-net:
         ipv4_address: 172.28.0.2
+    healthcheck:
+      test: "mc-health"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  camera-init:
+    build:
+      context: .
+      dockerfile: Dockerfile.onvif
+    entrypoint: ["python3", "/root/launch_minecraft.py", "--download-only"]
+    volumes:
+      - minecraft-client-cache:/root/.minecraft
+    networks:
+      camera-net:
 
   camera-1:
     build:
@@ -49,9 +66,14 @@ services:
     networks:
       camera-net:
         ipv4_address: 172.28.0.101
+    volumes:
+      - minecraft-client-cache:/root/.minecraft
     depends_on:
-      - minecraft-server
-    privileged: true  # For X server
+      minecraft-server:
+        condition: service_healthy
+      camera-init:
+        condition: service_completed_successfully
+#    privileged: true  # For X server
 
   camera-2:
     build:
@@ -81,9 +103,14 @@ services:
     networks:
       camera-net:
         ipv4_address: 172.28.0.102
+    volumes:
+      - minecraft-client-cache:/root/.minecraft
     depends_on:
-      - minecraft-server
-    privileged: true
+      minecraft-server:
+        condition: service_healthy
+      camera-init:
+        condition: service_completed_successfully
+#    privileged: true
 
   camera-3:
     build:
@@ -113,9 +140,14 @@ services:
     networks:
       camera-net:
         ipv4_address: 172.28.0.103
+    volumes:
+      - minecraft-client-cache:/root/.minecraft
     depends_on:
-      - minecraft-server
-    privileged: true
+      minecraft-server:
+        condition: service_healthy
+      camera-init:
+        condition: service_completed_successfully
+#    privileged: true
 
 networks:
   camera-net:
@@ -126,3 +158,4 @@ networks:
 
 volumes:
   minecraft-server-data:
+  minecraft-client-cache:

@@ -6,4 +6,4 @@ rtsp:
 
 streams:
   stream:
-    - exec:ffmpeg -f x11grab -framerate 30 -video_size 320x200 -i :1.0 -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 30 -f rtsp rtsp://localhost:8554/stream
+    - exec:ffmpeg -f x11grab -framerate 30 -video_size 320x200 -i :1.0 -c:v libx264 -preset ultrafast -tune zerolatency -pix_fmt yuv420p -g 30 -f h264 -
