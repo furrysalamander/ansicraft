@@ -227,9 +227,11 @@ pub struct PTZVector {
 use std::convert::Infallible;
 use yaserde::de::from_str;
 use yaserde::ser::to_string;
+use crate::ptz_controller::PtzController;
 
 pub async fn handle_ptz_service(
     body_bytes: bytes::Bytes,
+    controller: PtzController
 ) -> Result<impl warp::Reply, Infallible> {
     let body = String::from_utf8(body_bytes.to_vec()).unwrap_or_default();
 
@@ -238,12 +240,15 @@ pub async fn handle_ptz_service(
     match envelope {
         Ok(req) => {
             let response_body = match req.body {
-                PTZRequest::ContinuousMove(_move_req) => {
-                    // TODO: Forward to xdo for mouse movement
+                PTZRequest::ContinuousMove(move_req) => {
+                    let pan = move_req.velocity.pan_tilt.as_ref().map(|v| v.x).unwrap_or(0.0);
+                    let tilt = move_req.velocity.pan_tilt.as_ref().map(|v| v.y).unwrap_or(0.0);
+                    let zoom = move_req.velocity.zoom.as_ref().map(|v| v.x).unwrap_or(0.0);
+                    controller.continuous_move(pan, tilt, zoom).await;
                     PTZResponse::ContinuousMoveResponse(ContinuousMoveResponse {})
                 }
                 PTZRequest::Stop(_) => {
-                    // TODO: Stop continuous movement
+                    controller.stop().await;
                     PTZResponse::StopResponse(StopResponse {})
                 }
                 PTZRequest::GetConfigurations(_) => {
@@ -255,12 +260,18 @@ pub async fn handle_ptz_service(
                         }],
                     })
                 }
-                PTZRequest::AbsoluteMove(_move_req) => {
-                    // TODO: Forward to xdo
+                PTZRequest::AbsoluteMove(move_req) => {
+                    let pan = move_req.position.pan_tilt.as_ref().map(|v| v.x).unwrap_or(0.0);
+                    let tilt = move_req.position.pan_tilt.as_ref().map(|v| v.y).unwrap_or(0.0);
+                    let zoom = move_req.position.zoom.as_ref().map(|v| v.x).unwrap_or(0.0);
+                    controller.absolute_move(pan, tilt, zoom).await;
                     PTZResponse::AbsoluteMoveResponse(AbsoluteMoveResponse {})
                 }
-                PTZRequest::RelativeMove(_move_req) => {
-                    // TODO: Forward to xdo
+                PTZRequest::RelativeMove(move_req) => {
+                    let pan = move_req.translation.pan_tilt.as_ref().map(|v| v.x).unwrap_or(0.0);
+                    let tilt = move_req.translation.pan_tilt.as_ref().map(|v| v.y).unwrap_or(0.0);
+                    let zoom = move_req.translation.zoom.as_ref().map(|v| v.x).unwrap_or(0.0);
+                    controller.relative_move(pan, tilt, zoom).await;
                     PTZResponse::RelativeMoveResponse(RelativeMoveResponse {})
                 }
             };

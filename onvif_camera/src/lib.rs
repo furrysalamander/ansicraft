@@ -26,6 +26,8 @@ pub async fn run(port: u16, verbose: bool) {
 
     tracing::info!("Starting ONVIF camera server on port {}", port);
 
+    let ptz_controller = ptz_controller::PtzController::new();
+
     // Create ONVIF service routes
     let device_service = warp::path!("onvif" / "device_service")
         .and(warp::post())
@@ -37,9 +39,12 @@ pub async fn run(port: u16, verbose: bool) {
         .and(warp::body::bytes())
         .and_then(services::media::handle_media_service);
 
+    let ptz_controller_filter = warp::any().map(move || ptz_controller.clone());
+
     let ptz_service = warp::path!("onvif" / "ptz_service")
         .and(warp::post())
         .and(warp::body::bytes())
+        .and(ptz_controller_filter)
         .and_then(services::ptz::handle_ptz_service);
 
     let routes = device_service
