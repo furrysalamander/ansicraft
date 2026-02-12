@@ -1,11 +1,7 @@
-mod config;
-mod minecraft;
-mod queueing;
-mod render;
 mod sshng;
-mod xdo;
+mod queueing;
 
-use config::TerminalSize;
+use minecraft_terminal_viewer::config::TerminalSize;
 use termwiz::terminal::Terminal;
 
 use std::io;
@@ -61,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         let resize_running = running.clone();
 
         let target_width = 40 as usize;
-        let target_height = render::get_height_from_width(target_width);
+        let target_height = minecraft_terminal_viewer::render::get_height_from_width(target_width);
 
         let terminal_size = Arc::new(Mutex::new(TerminalSize {
             target_width,
@@ -77,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
                         if let Ok(screen_size) = tw_term.get_screen_size() {
                             let mut size = resize_terminal_size.lock().unwrap();
                             size.target_width = screen_size.cols as usize;
-                            size.target_height = render::get_height_from_width(screen_size.cols as usize);
+                            size.target_height = minecraft_terminal_viewer::render::get_height_from_width(screen_size.cols as usize);
                         }
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }
@@ -85,8 +81,8 @@ async fn main() -> anyhow::Result<()> {
             }
         });
 
-        minecraft::run(
-            minecraft::MinecraftConfig {
+        minecraft_terminal_viewer::run(
+            minecraft_terminal_viewer::MinecraftConfig {
                 xorg_display: ":1".to_owned(),
                 username: "docker".to_owned(),
                 server_address: "".to_owned(),

@@ -3,6 +3,14 @@ name = "minecraft_terminal_viewer"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "termcast"
+path = "src/bin/termcast.rs"
+
+[lib]
+name = "minecraft_terminal_viewer"
+path = "src/lib.rs"
+
 [dependencies]
 anyhow = "1.0"
 crossterm = "0.29"
