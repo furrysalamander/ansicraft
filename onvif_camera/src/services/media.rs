@@ -1,3 +1,5 @@
+#![allow(non_local_definitions)]
+
 use crate::models::*;
 use crate::soap::Header;
 use yaserde_derive::{YaDeserialize, YaSerialize};

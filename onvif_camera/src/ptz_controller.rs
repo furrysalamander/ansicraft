@@ -2,7 +2,6 @@
 // Currently a placeholder - xdo integration will be added later
 
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use tokio::time::{sleep, Duration};
 
 #[derive(Clone)]
 pub struct PtzController {

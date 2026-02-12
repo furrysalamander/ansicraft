@@ -31,8 +31,10 @@ COPY minecraft_terminal_viewer/src minecraft_terminal_viewer/src
 COPY onvif_camera/src onvif_camera/src
 
 # Build the ONVIF camera application
+# Clean both packages to avoid using cached dummy lib
 RUN cd onvif_camera && \
     cargo clean --release --package onvif_camera && \
+    cargo clean --release --package minecraft_terminal_viewer && \
     cargo build --release
 
 # Runtime stage

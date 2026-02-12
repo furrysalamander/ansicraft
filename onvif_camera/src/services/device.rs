@@ -1,4 +1,6 @@
-use crate::models::{Date, Time, DateTime, PTZConfiguration, Profile, VideoEncoderConfiguration, VideoResolution};
+#![allow(non_local_definitions)]
+
+use crate::models::{Date, Time, DateTime};
 // use chrono::{Datelike, Timelike, Utc};
 use crate::soap::Header;
 use yaserde_derive::{YaDeserialize, YaSerialize};

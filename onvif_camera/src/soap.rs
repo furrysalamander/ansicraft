@@ -1,3 +1,5 @@
+#![allow(non_local_definitions)]
+
 use yaserde_derive::{YaDeserialize, YaSerialize};
 
 #[derive(Debug, Default, YaSerialize, YaDeserialize)]
