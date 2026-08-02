@@ -1,12 +1,66 @@
 import minecraft_launcher_lib
+import minecraft_launcher_lib.install
 import subprocess
 import sys
 import os
+import json
+import platform
+import zipfile
 import argparse
 import tempfile
 import signal
 import atexit
 import urllib.request
+
+# minecraft-launcher-lib only knows x86_64 Linux ("linux") in its JVM
+# platform detection, and Mojang's runtime manifest has no arm64 Linux Java.
+# On ARM64 the image ships openjdk-21-jre, so skip the (wrong-arch) runtime
+# download and launch with the system Java instead.
+ARM64 = platform.machine() in ("aarch64", "arm64")
+if ARM64:
+    minecraft_launcher_lib.install.install_jvm_runtime = lambda *args, **kwargs: None
+    SYSTEM_JAVA = "/usr/lib/jvm/java-21-openjdk-arm64/bin/java"
+
+
+def swap_arm64_natives(minecraft_directory: str, version: str) -> None:
+    """Replace x86_64 LWJGL native jars with arm64 builds from Maven Central.
+
+    The 1.21.4 client manifest only ships ``natives-linux`` (x86_64) jars;
+    Mojang publishes no arm64 Linux natives. The matching arm64 artifacts
+    exist on Maven Central, so overwrite the on-disk jars (same filename, so
+    the classpath stays valid) and re-extract the contained .so files.
+    """
+    version_json = os.path.join(minecraft_directory, "versions", version, version + ".json")
+    with open(version_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    natives_dir = os.path.join(minecraft_directory, "versions", version, "natives")
+
+    for lib in data.get("libraries", []):
+        artifact = lib.get("downloads", {}).get("artifact", {})
+        path = artifact.get("path", "")
+        if not path.endswith("-natives-linux.jar"):
+            continue
+        # Mojang-only profiler; no arm64 build exists. Keep the x86_64 jar
+        # out of the classpath so it can't be loaded.
+        if path.startswith("com/mojang/jtracy/"):
+            continue
+        arm64_path = path[:-len("-natives-linux.jar")] + "-natives-linux-arm64.jar"
+        url = "https://repo1.maven.org/maven2/" + arm64_path
+        local = os.path.join(minecraft_directory, "libraries", path)
+        print(f"Swapping arm64 natives for {path.split('/')[-2]}")
+        try:
+            urllib.request.urlretrieve(url, local + ".tmp")
+            os.replace(local + ".tmp", local)
+            with zipfile.ZipFile(local) as zf:
+                for name in zf.namelist():
+                    if name.endswith("/") or name.startswith("META-INF"):
+                        continue
+                    target = os.path.join(natives_dir, os.path.basename(name))
+                    with zf.open(name) as src, open(target, "wb") as dst:
+                        dst.write(src.read())
+        except Exception as e:
+            print(f"Failed to swap {path}: {e}")
 
 # Global variable to track the subprocess
 minecraft_process = None
@@ -89,6 +143,9 @@ if not os.path.exists(options_dir):
 minecraft_launcher_lib.install.install_minecraft_version(minecraft_version, minecraft_directory)
 # minecraft_launcher_lib.mrpack.install_mrpack(mrpack_path, minecraft_directory)
 
+if ARM64:
+    swap_arm64_natives(minecraft_directory, minecraft_version)
+
 # If download-only mode is specified, exit now
 if args.download_only:
     print("Minecraft files downloaded successfully. Exiting.")
@@ -101,6 +158,8 @@ options = {
     "uuid": "00000000-0000-0000-0000-000000000000",
     "token": "",
 }
+if ARM64:
+    options["executablePath"] = SYSTEM_JAVA
 
 minecraft_command = minecraft_launcher_lib.command.get_minecraft_command(
     minecraft_version,
